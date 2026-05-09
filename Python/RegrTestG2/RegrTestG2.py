@@ -46,14 +46,17 @@
 #
 #===============================================================================
 
-testVers = '00.00.07'
+# Support Python 3 print(,end="") functionality so py2.7 and py3.x work
+from __future__ import print_function
+
+testVers = '00.00.08'
 
 import sys
 import serial
 import array
 import time
 import re
-import rs232Intf
+import rs232BIntf
 import subprocess
 import os
 
@@ -63,9 +66,11 @@ testNum = 255
 data = ""
 NUM_MSGS = 1
 currInpData = []
+matrixInpData = []
 numGen2Brd = 0
 gen2AddrArr = []
 currWingCfg = []
+hasMatrix = []
 versInt = 0
 
 CRC8ByteLookup = \
@@ -87,64 +92,63 @@ CRC8ByteLookup = \
       0xde, 0xd9, 0xd0, 0xd7, 0xc2, 0xc5, 0xcc, 0xcb, 0xe6, 0xe1, 0xe8, 0xef, 0xfa, 0xfd, 0xf4, 0xf3 ]
 
 # Config inputs as all state inputs
-wingCfg = [ [ rs232Intf.WING_NEO, rs232Intf.WING_SOL, rs232Intf.WING_INP, rs232Intf.WING_INCAND ] ]
+wingCfg = [ [ rs232BIntf.WING_NEO, rs232BIntf.WING_SOL, rs232BIntf.WING_INP, rs232BIntf.WING_INCAND ] ]
 
 # Config inputs as all state inputs
-inpCfg = [ [ rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, \
-             rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, \
-             rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, \
-             rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, \
-             rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, \
-             rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, \
-             rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, \
-             rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE ], \
-           [ rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, \
-             rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, \
-             rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, \
-             rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, \
-             rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, \
-             rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, \
-             rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, \
-             rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE, rs232Intf.CFG_INP_STATE ] ]
+inpCfg = [ [ rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, \
+             rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, \
+             rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, \
+             rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, \
+             rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, \
+             rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, \
+             rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, \
+             rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE ], \
+           [ rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, \
+             rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, \
+             rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, \
+             rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, \
+             rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, \
+             rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, \
+             rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, \
+             rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE, rs232BIntf.CFG_INP_STATE ] ]
 
 # Config for solenoid wing board in second position, first two config'd as flippers, second two config'd as one-shots
-solCfg =  [ [ '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-              '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-              rs232Intf.CFG_SOL_USE_SWITCH, '\x30', '\x04', rs232Intf.CFG_SOL_USE_SWITCH, '\x30', '\x04', \
-              rs232Intf.CFG_SOL_USE_SWITCH, '\x10', '\x00', rs232Intf.CFG_SOL_USE_SWITCH, '\x10', '\x00', \
-              '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-              '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-              '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-              '\x00', '\x00', '\x00', '\x00', '\x00', '\x00' ], \
-            [ '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-              '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-              rs232Intf.CFG_SOL_USE_SWITCH, '\x01', '\x01', rs232Intf.CFG_SOL_USE_SWITCH, '\xff', '\x0f', \
-              rs232Intf.CFG_SOL_USE_SWITCH, '\x01', '\x00', rs232Intf.CFG_SOL_USE_SWITCH, '\xff', '\x00', \
-              '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-              '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-              '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-              '\x00', '\x00', '\x00', '\x00', '\x00', '\x00' ] ]
+solCfg =  [ [ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+              rs232BIntf.CFG_SOL_USE_SWITCH, 0x30, 0x04, rs232BIntf.CFG_SOL_USE_SWITCH, 0x30, 0x04, \
+              rs232BIntf.CFG_SOL_USE_SWITCH, 0x10, 0x00, rs232BIntf.CFG_SOL_USE_SWITCH, 0x10, 0x00, \
+              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+              0x00, 0x00, 0x00, 0x00, 0x00, 0x00 ], \
+            [ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+              rs232BIntf.CFG_SOL_USE_SWITCH, 0x01, 0x01, rs232BIntf.CFG_SOL_USE_SWITCH, 0xff, 0x0f, \
+              rs232BIntf.CFG_SOL_USE_SWITCH, 0x01, 0x00, rs232BIntf.CFG_SOL_USE_SWITCH, 0xff, 0x00, \
+              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+              0x00, 0x00, 0x00, 0x00, 0x00, 0x00 ] ]
 
 # Config color table
 #              Entry 0                 Entry 1                 Entry 2                 Entry 3 */
-colorCfg = [ [ '\xff', '\x00', '\x00', '\x00', '\xff', '\x00', '\x00', '\x00', '\xff', '\xff', '\xff', '\x00', \
-               '\xff', '\x00', '\xff', '\x00', '\xff', '\xff', '\xff', '\xff', '\xff', '\x00', '\x00', '\x00', \
-               '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-               '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-               '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-               '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-               '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-               '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-               '\x10', \
+colorCfg = [ [ 0xff, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0x00, \
+               0xff, 0x00, 0xff, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, \
+               0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+               0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+               0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+               0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+               0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+               0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+               0x10, \
             ] ]
 
 #calculate a crc8
-def calcCrc8(msgChars):
+def calcCrc8(msgInts):
     crc8Byte = 0xff
-    for indChar in msgChars:
-        indInt = ord(indChar)
+    for indInt in msgInts:
         crc8Byte = CRC8ByteLookup[crc8Byte ^ indInt];
-    return (chr(crc8Byte))
+    return (crc8Byte)
 
 def getChar():
     global windows
@@ -206,35 +210,47 @@ def getSerialData():
 def sendInvCmd():
     global ser
     cmdArr = []
-    cmdArr.append(rs232Intf.INV_CMD)
-    cmdArr.append(rs232Intf.EOM_CMD)
-    sendCmd = ''.join(cmdArr)
-    ser.write(sendCmd)
+    cmdArr.append(rs232BIntf.INV_CMD)
+    cmdArr.append(rs232BIntf.EOM_CMD)
+    ser.write(cmdArr)
 
 #rcv inventory resp
-def rcvInvResp():
+def rcvInvResp(append = True):
     global numGen2Brd
     global gen2AddrArr
     global currInpData
+    global matrixInpData
+
+    global hasMatrix
     global currWingCfg
     data = getSerialData();
     #First byte should be inventory cmd
     index = 1
+    if (len(data) == 0):
+        print ("No data received.  Are the Tx/Rx jumpers installed?")
+        return (100)
+    if (data[0] != rs232BIntf.INV_CMD):
+        return (101)
+    if (len(data) < index + 1):
+        print ("Could not find EOM.")
+        return (102)
     numGen2Brd = 0
     gen2AddrArr = []
-    currInpData = []
-    currWingCfg = []
-    if (data[0] != rs232Intf.INV_CMD):
-        return (100)
-    while (data[index] != rs232Intf.EOM_CMD):
-        if ((ord(data[index]) & ord(rs232Intf.CARD_ID_TYPE_MASK)) == ord(rs232Intf.CARD_ID_GEN2_CARD)):
+    while (data[index] != rs232BIntf.EOM_CMD):
+        if ((data[index] & rs232BIntf.CARD_ID_TYPE_MASK) == rs232BIntf.CARD_ID_GEN2_CARD):
             numGen2Brd = numGen2Brd + 1
             gen2AddrArr.append(data[index])
-            currInpData.append(0)
-            currWingCfg.append(0)
+            if (append):
+                currInpData.append(0)
+                currWingCfg.append(0)
+                hasMatrix.append(False)
+                matrixInpData.append([0,0,0,0,0,0,0,0])
         index = index + 1
-    print "Found %d Gen2 brds." % numGen2Brd
-    print "Addr = %s" % [hex(ord(n)) for n in gen2AddrArr]
+        if (len(data) < index + 1):
+            print ("Could not find EOM.")
+            return (103)
+    print ("Found {} Gen2 brds.".format(numGen2Brd))
+    print("Addr = {}".format(''.join(["0x%02x " % byte for byte in gen2AddrArr])))
     return (0)
 
 #send standard 4 byte command
@@ -246,18 +262,17 @@ def sendStd4ByteCmd(cmd):
     # First address for Gen2 cards is always 0x20
     cmdArr.append(gen2AddrArr[0])
     cmdArr.append(cmd)
-    cmdArr.append('\x00')
-    cmdArr.append('\x00')
-    cmdArr.append('\x00')
-    cmdArr.append('\x00')
+    cmdArr.append(0x00)
+    cmdArr.append(0x00)
+    cmdArr.append(0x00)
+    cmdArr.append(0x00)
     cmdArr.append(calcCrc8(cmdArr))
-    cmdArr.append(rs232Intf.EOM_CMD)
-    sendCmd = ''.join(cmdArr)
-    ser.write(sendCmd)
+    cmdArr.append(rs232BIntf.EOM_CMD)
+    ser.write(cmdArr)
 
 #send get version cmd
 def sendGetVersCmd():
-    sendStd4ByteCmd(rs232Intf.GET_VERS_CMD)
+    sendStd4ByteCmd(rs232BIntf.GET_VERS_CMD)
 
 #rcv get version resp
 def rcvGetVersResp(version):
@@ -268,30 +283,30 @@ def rcvGetVersResp(version):
     global versInt
     data = getSerialData();
     if (data[0] != gen2AddrArr[0]):
-        print "\nData = %d, expected = %d" % (ord(data[0]),ord(gen2AddrArr[0]))
-        print repr(data)
+        print("\nData = {0}, expected = {1}".format(data[0],gen2AddrArr[0]))
+        print(repr(data))
         return (200)
-    if (data[1] != rs232Intf.GET_VERS_CMD):
-        print "\nData = %d, expected = %d" % (ord(data[1]),ord(rs232Intf.READ_GEN2_INP_CMD))
-        print repr(data)
+    if (data[1] != rs232BIntf.GET_VERS_CMD):
+        print("\nData = {0}, expected = {1}".format(data[1],rs232BIntf.READ_GEN2_INP_CMD))
+        print(repr(data))
         return (201)
     tmpData = [ data[0], data[1], data[2], data[3], data[4], data[5] ]
     crc8 = calcCrc8(tmpData)
     if (data[6] != crc8):
-        print "\nBad CRC, Data = %d, expected = %d" % (ord(data[6]),crc8)
+        print("\nBad CRC, Data = {0}, expected = {1}".format(data[6],crc8))
         return (202)
-    if (data[7] != rs232Intf.EOM_CMD):
-        print "\nData = %d, expected = %d" % (ord(data[7]),ord(rs232Intf.EOM_CMD))
+    if (data[7] != rs232BIntf.EOM_CMD):
+        print("\nData = {0}, expected = {1}".format(data[7],rs232BIntf.EOM_CMD))
         return (203)
-    versResp = "%d.%d.%d.%d" % (ord(data[2]), ord(data[3]), ord(data[4]), ord(data[5]))
-    print "Found version " + versResp
+    versResp = "%d.%d.%d.%d" % (data[2], data[3], data[4], data[5])
+    print("Found version " + versResp)
     if version:
         # Verify the version number if it was passed in on the command line
         if version != versResp:
-            print "\n!!! Fail !!! Version does not match expected version.\n"
-            print "Data = %s, expected = %s" % (versResp, version)
+            print("\n!!! Fail !!! Version does not match expected version.\n")
+            print("\nData = {0}, expected = {1}".format(versResp, version))
             return (204)
-    versInt = (ord(data[2]) << 24) | (ord(data[3]) << 16) | (ord(data[4]) << 8) | ord(data[5])
+    versInt = (data[2] << 24) | (data[3] << 16) | (data[4] << 8) | data[5]
     return (0)
 
 #send get serial number cmd
@@ -299,19 +314,18 @@ def sendSetSerNumCmd(serialNum):
     global ser
     cmdArr = []
     cmdArr.append(gen2AddrArr[0])
-    cmdArr.append(rs232Intf.SET_SER_NUM_CMD)
-    cmdArr.append(chr((serialNum >> 24) & 0xff))
-    cmdArr.append(chr((serialNum >> 16) & 0xff))
-    cmdArr.append(chr((serialNum >> 8) & 0xff))
-    cmdArr.append(chr(serialNum & 0xff))
+    cmdArr.append(rs232BIntf.SET_SER_NUM_CMD)
+    cmdArr.append((serialNum >> 24) & 0xff)
+    cmdArr.append((serialNum >> 16) & 0xff)
+    cmdArr.append((serialNum >> 8) & 0xff)
+    cmdArr.append(serialNum & 0xff)
     cmdArr.append(calcCrc8(cmdArr))
-    cmdArr.append(rs232Intf.EOM_CMD)
-    sendCmd = ''.join(cmdArr)
-    ser.write(sendCmd)
+    cmdArr.append(rs232BIntf.EOM_CMD)
+    ser.write(cmdArr)
 
 #send get serial number cmd
 def sendGetSerNumCmd():
-    sendStd4ByteCmd(rs232Intf.GET_SER_NUM_CMD)
+    sendStd4ByteCmd(rs232BIntf.GET_SER_NUM_CMD)
 
 #rcv get serial number resp
 def rcvGetSerNumResp():
@@ -322,31 +336,31 @@ def rcvGetSerNumResp():
     expectedSerialNum = 123456789
     data = getSerialData();
     if (data[0] != gen2AddrArr[0]):
-        print "\nData = %d, expected = %d" % (ord(data[0]),ord(gen2AddrArr[0]))
-        print repr(data)
+        print("\nData = {0}, expected = {1}".format(data[0],gen2AddrArr[0]))
+        print(repr(data))
         return (300)
-    if (data[1] != rs232Intf.GET_SER_NUM_CMD):
-        print "\nData = %d, expected = %d" % (ord(data[1]),ord(rs232Intf.READ_GEN2_INP_CMD))
-        print repr(data)
+    if (data[1] != rs232BIntf.GET_SER_NUM_CMD):
+        print("\nData = {0}, expected = {1}".format(data[1],rs232BIntf.READ_GEN2_INP_CMD))
+        print(repr(data))
         return (301)
     tmpData = [ data[0], data[1], data[2], data[3], data[4], data[5] ]
     crc8 = calcCrc8(tmpData)
     if (data[6] != crc8):
-        print "\nBad CRC, Data = %d, expected = %d" % (ord(data[6]),crc8)
+        print("\nBad CRC, Data = {0}, expected = {1}".format(data[6],crc8))
         return (302)
-    if (data[7] != rs232Intf.EOM_CMD):
-        print "\nData = %d, expected = %d" % (ord(data[7]),ord(rs232Intf.EOM_CMD))
+    if (data[7] != rs232BIntf.EOM_CMD):
+        print("\nData = {0}, expected = {1}".format(data[7],rs232BIntf.EOM_CMD))
         return (303)
-    serialNum = (ord(data[2]) << 24) | (ord(data[3]) << 16) | (ord(data[4]) << 8) | ord(data[5])
-    print "Found serial num: %d" % serialNum
+    serialNum = (data[2] << 24) | (data[3] << 16) | (data[4] << 8) | data[5]
+    print("Found serial num: {0}".format(serialNum))
     if (serialNum == 0):
         sendSetSerNumCmd(expectedSerialNum)
         retCode = rcvEomResp()
         if (retCode != 0):
-            print "\n!!! Fail !!! Could not program serial number into card.\n"
+            print("\n!!! Fail !!! Could not program serial number into card.\n")
             return (304)
     elif (serialNum != expectedSerialNum):
-        print "\n!!! Fail !!! Serial number not the expected value.\n"
+        print("\n!!! Fail !!! Serial number not the expected value.\n")
         return (305)
     return (0)
 
@@ -355,24 +369,22 @@ def sendResetCmd():
     global ser
     cmdArr = []
     cmdArr.append(gen2AddrArr[0])
-    cmdArr.append(rs232Intf.RESET_CMD)
+    cmdArr.append(rs232BIntf.RESET_CMD)
     cmdArr.append(calcCrc8(cmdArr))
-    cmdArr.append(rs232Intf.EOM_CMD)
-    sendCmd = ''.join(cmdArr)
-    ser.write(sendCmd)
+    cmdArr.append(rs232BIntf.EOM_CMD)
+    ser.write(cmdArr)
 
 #Update code, tests go bootloader command
 def TestGoBoot():
     global ser
     global gen2AddrArr
     
-    print "\nForcing board into the boot loader.  Sent Go Boot command."
+    print("\nForcing board into the boot loader.  Sent Go Boot command.")
     cmdArr = []
     cmdArr.append(gen2AddrArr[0])
-    cmdArr.append(rs232Intf.GO_BOOT_CMD)
+    cmdArr.append(rs232BIntf.GO_BOOT_CMD)
     cmdArr.append(calcCrc8(cmdArr))
-    sendCmd = ''.join(cmdArr)
-    ser.write(sendCmd)
+    ser.write(cmdArr)
     time.sleep(1)
     ser.close()
 
@@ -380,31 +392,31 @@ def TestGoBoot():
        "c:\Python27\python.exe -m cyflash.__main__" + \
        " --serial " + port + " --serial_baudrate 115200" + \
        " ..\..\Creator\Gen2\Gen2.cydsn\CortexM0\ARM_GCC_541\Debug\Gen2.cyacd"
-    print "Updating code to latest version."
+    print("Updating code to latest version.")
     process = subprocess.Popen(command,stdout=subprocess.PIPE, shell=True)
     proc_stdout = process.communicate()[0].strip()
     if not "Device checksum verifies OK." in proc_stdout:
-        print "!!! Fail !!! Update code failed.\n"
+        print("!!! Fail !!! Update code failed.\n")
         return 400
     # Send inventory command so card "relearns" its address.
     try:
         ser=serial.Serial(port, baudrate=115200, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=.1)
     except serial.SerialException:
-        print "\nCould not open " + port + " after upgrading firmware."
+        print("\nCould not open " + port + " after upgrading firmware.")
         return 401
     sendInvCmd()
     rcvInvResp()
-    print "GoBoot tested successfully."
+    print("GoBoot tested successfully.")
     return 0
 
 def TestGetVersion(version):
-    print "\nTesting Get Version command."
+    print("\nTesting Get Version command.")
     sendGetVersCmd()
     retCode = rcvGetVersResp(version)
     return retCode
 
 def TestGetSerialNum():
-    print "\nTesting Get Serial Number command."
+    print("\nTesting Get Serial Number command.")
     sendGetSerNumCmd()
     retCode = rcvGetSerNumResp()
     return retCode
@@ -418,7 +430,7 @@ def ResetBoard():
     try:
         ser=serial.Serial(port, baudrate=115200, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=.1)
     except serial.SerialException:
-        print "\nCould not open " + port + " when resetting card."
+        print("\nCould not open " + port + " when resetting card.")
         return 550
     sendInvCmd()
     rcvInvResp()
@@ -429,7 +441,7 @@ def TestStoreStdCfg():
     global ser
     global windows
     
-    print "\nStoring standard configuration on the card."
+    print("\nStoring standard configuration on the card.")
     ser.close()
 
     if windows:
@@ -446,41 +458,41 @@ def TestStoreStdCfg():
     try:
         ser=serial.Serial(port, baudrate=115200, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=.1)
     except serial.SerialException:
-        print "\nCould not open " + port + " updating configuration."
+        print("\nCould not open " + port + " updating configuration.")
         return 500
     retCode = ResetBoard()
     if retCode: return retCode
-    print "Store standard configuration successful."
+    print("Store standard configuration successful.")
     return 0
 
 #Verify standard configuration, tests read input cmd, verifies
 #solenoid configuration working for one-shots and PWMs
 def VerifyStdCfg():
-    print "\nVerify standard configuration."
-    print "\nTest input switches for solenoids."
-    print "Verify 0 and 1 act like flippers."
-    print "Verify 2 and 3 act like one-shots."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify standard configuration.")
+    print("\nTest input switches for solenoids.")
+    print("Verify 0 and 1 act like flippers.")
+    print("Verify 2 and 3 act like one-shots.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nStandard configuration for solenoids failed."
+        print("\nStandard configuration for solenoids failed.")
         return 601
-    print "\nTest read input cmd for input switches."
-    print "Note:  PSOC4200:  First input switch on right is output for Neopixel, so not an input."
-    print "Note:  STM32F103:  Fifth input switch from right is output for Neopixel, so not an input."
-    print "All other inputs are configured in state mode."
-    print "Press (y) if working, (n) if not working."
+    print("\nTest read input cmd for input switches.")
+    print("Note:  PSOC4200:  First input switch on right is output for Neopixel, so not an input.")
+    print("Note:  STM32F103:  Fifth input switch from right is output for Neopixel, so not an input.")
+    print("All other inputs are configured in state mode.")
+    print("Press (y) if working, (n) if not working.")
     exitReq = False
     while (not exitReq):
         sendReadInpBrdCmd()
         retCode = rcvReadInpResp()
         if retCode != 0:
-            print "\nRead input response failed." % count
+            print("\nRead input response failed.")
             return (retCode)
         outArr = []
         outArr.append('\r')
-        for loop in range(rs232Intf.NUM_G2_INP_PER_BRD):
-            if (currInpData[0] & (1 << (rs232Intf.NUM_G2_INP_PER_BRD - loop - 1))):
+        for loop in range(rs232BIntf.NUM_G2_INP_PER_BRD):
+            if (currInpData[0] & (1 << (rs232BIntf.NUM_G2_INP_PER_BRD - loop - 1))):
                 outArr.append('1')
             else:
                 outArr.append('0')
@@ -490,20 +502,20 @@ def VerifyStdCfg():
         while kbHit():
             char = getAsynchChar()
             if (char != 'y') and (char != 'Y'):
-                print "\nStandard configuration for inputs failed."
+                print("\nStandard configuration for inputs failed.")
                 retCode = 602
             else:
                 retCode = 0
             exitReq = True
-    print ""
+    print("")
     return retCode
 
 #Test processor can kick solenoids (with no auto clear)
 #Verify on both one-shots and flipper configurations
 def TestProcNoAutoClr():
-    print "\nVerify main processor driving solenoids (no auto clear)."
-    print "\nTurning on flipper 1 'on' for 1 second/'off' for 1 second."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify main processor driving solenoids (no auto clear).")
+    print("\nTurning on flipper 1 'on' for 1 second/'off' for 1 second.")
+    print("Press (y) if working, (n) if not working.")
     exitReq = False
     while (not exitReq):
         sendKickSolCmd(0x0020, 0x0020)
@@ -517,15 +529,15 @@ def TestProcNoAutoClr():
         while kbHit():
             char = getAsynchChar()
             if (char != 'y') and (char != 'Y'):
-                print "\nSolenoid kick command failed for flippers."
+                print("\nSolenoid kick command failed for flippers.")
                 retCode = 1401
             else:
                 retCode = 0
             exitReq = True
         if not exitReq:
             time.sleep(1)
-    print "\nOne shot solenoid 3 firing continuously for 1 second/off for 1 second."
-    print "Press (y) if working, (n) if not working."
+    print("\nOne shot solenoid 3 firing continuously for 1 second/off for 1 second.")
+    print("Press (y) if working, (n) if not working.")
     exitReq = False
     while (not exitReq):
         sendKickSolCmd(0x0080, 0x0080)
@@ -539,7 +551,7 @@ def TestProcNoAutoClr():
         while kbHit():
             char = getAsynchChar()
             if (char != 'y') and (char != 'Y'):
-                print "\nSolenoid kick command failed for one shots."
+                print("\nSolenoid kick command failed for one shots.")
                 retCode = 1402
             else:
                 retCode = 0
@@ -556,9 +568,9 @@ def TestProcAutoClr():
     retCode = rcvEomResp()
     if retCode: return (retCode)
     
-    print "\nVerify main processor driving solenoids (with auto clear)."
-    print "\nTurning on flipper 0 'on', wait 1 second then repeat."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify main processor driving solenoids (with auto clear).")
+    print("\nTurning on flipper 0 'on', wait 1 second then repeat.")
+    print("Press (y) if working, (n) if not working.")
     exitReq = False
     while (not exitReq):
         sendKickSolCmd(0x0010, 0x0010)
@@ -569,7 +581,7 @@ def TestProcAutoClr():
         while kbHit():
             char = getAsynchChar()
             if (char != 'y') and (char != 'Y'):
-                print "\nSolenoid kick command failed for flippers."
+                print("\nSolenoid kick command failed for flippers.")
                 retCode = 1501
             else:
                 retCode = 0
@@ -581,8 +593,8 @@ def TestProcAutoClr():
     sendCfgIndSolCmd(0x06, 0x03, 0x10, 0x00)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nOne shot solenoid 2 firing once, wait 1 second then repeat."
-    print "Press (y) if working, (n) if not working."
+    print("\nOne shot solenoid 2 firing once, wait 1 second then repeat.")
+    print("Press (y) if working, (n) if not working.")
     
     exitReq = False
     while (not exitReq):
@@ -594,7 +606,7 @@ def TestProcAutoClr():
         while kbHit():
             char = getAsynchChar()
             if (char != 'y') and (char != 'Y'):
-                print "\nSolenoid kick command failed for one shots."
+                print("\nSolenoid kick command failed for one shots.")
                 retCode = 1502
             else:
                 retCode = 0
@@ -613,14 +625,14 @@ def TestSolenoidConfig():
     retCode = rcvEomResp()
     if retCode: return (retCode)
     
-    print "\nVerify solenoid 0 is flipper with minimum (1 ms init kick/min PWM)"
-    print "Verify solenoid 1 is flipper with maximum (255 ms init kick/max PWM)"
-    print "Verify solenoid 2 is one shot with minimum (1 ms) init kick"
-    print "Verify solenoid 3 is one shot with maximum (255 ms) init kick"
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify solenoid 0 is flipper with minimum (1 ms init kick/min PWM)")
+    print("Verify solenoid 1 is flipper with maximum (255 ms init kick/max PWM)")
+    print("Verify solenoid 2 is one shot with minimum (1 ms) init kick")
+    print("Verify solenoid 3 is one shot with maximum (255 ms) init kick")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nStandard configuration for solenoids failed."
+        print("\nStandard configuration for solenoids failed.")
         return 1601
     return 0
 
@@ -631,16 +643,16 @@ def TestOnOffSolConfig():
     retCode = rcvEomResp()
     if retCode: return (retCode)
     
-    print "\nVerify solenoid 0 is fully on when the button is pressed (no flicker)"
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify solenoid 0 is fully on when the button is pressed (no flicker)")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nStandard configuration for solenoids failed."
+        print("\nStandard configuration for solenoids failed.")
         return 1701
     # Verify processor can drive on/off solenoid
-    print "\nVerify main processor driving on/off solenoid."
-    print "\nTurning solenoid 0 'on' for 1 second/'off' for 1 second."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify main processor driving on/off solenoid.")
+    print("\nTurning solenoid 0 'on' for 1 second/'off' for 1 second.")
+    print("Press (y) if working, (n) if not working.")
     exitReq = False
     while (not exitReq):
         sendKickSolCmd(0x0010, 0x0010)
@@ -654,7 +666,7 @@ def TestOnOffSolConfig():
         while kbHit():
             char = getAsynchChar()
             if (char != 'y') and (char != 'Y'):
-                print "\nSolenoid kick command failed for on/off solenoid."
+                print("\nSolenoid kick command failed for on/off solenoid.")
                 retCode = 1702
             else:
                 retCode = 0
@@ -673,10 +685,10 @@ def TestDelaySolConfig():
     retCode = rcvEomResp()
     if retCode: return (retCode)
     
-    print "\nVerify delay solenoid cmd."
-    print "\nSolenoid 0 has a 0 ms delay and solenoid 1 has a 60 ms delay."
-    print "Solenoids are triggered every second."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify delay solenoid cmd.")
+    print("\nSolenoid 0 has a 0 ms delay and solenoid 1 has a 60 ms delay.")
+    print("Solenoids are triggered every second.")
+    print("Press (y) if working, (n) if not working.")
     exitReq = False
     while (not exitReq):
         sendKickSolCmd(0x0030, 0x0030)
@@ -687,7 +699,7 @@ def TestDelaySolConfig():
         while kbHit():
             char = getAsynchChar()
             if (char != 'y') and (char != 'Y'):
-                print "\nSolenoid delay command failed."
+                print("\nSolenoid delay command failed.")
                 retCode = 1801
             else:
                 retCode = 0
@@ -703,11 +715,11 @@ def TestSolInputConfig():
     retCode = rcvEomResp()
     if retCode: return (retCode)
     
-    print "\nVerify first solenoid is not triggered using its input switch."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify first solenoid is not triggered using its input switch.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nDisable solenoid switch configuration failed."
+        print("\nDisable solenoid switch configuration failed.")
         return 1901
     # Verify configuring third solenoid as using the input switch, then remove
     # switch by sending set solenoid input command
@@ -717,31 +729,31 @@ def TestSolInputConfig():
     sendSetSolInputCmd(0x0a, 0x86)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nVerify third solenoid is not triggered using its input switch."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify third solenoid is not triggered using its input switch.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nDisable solenoid switch configuration failed."
+        print("\nDisable solenoid switch configuration failed.")
         return 1902
     # Verify third solenoid can be triggered using first solenoid's input switch
     sendSetSolInputCmd(0x08, 0x06)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nVerify third solenoid is triggered using the first solenoid input switch."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify third solenoid is triggered using the first solenoid input switch.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nDisable solenoid switch configuration failed."
+        print("\nDisable solenoid switch configuration failed.")
         return 1903
     # Verify third solenoid can be triggered using second input wing switch on wing 2
     sendSetSolInputCmd(0x11, 0x06)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nVerify third solenoid is triggered using the second input switch on wing 2."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify third solenoid is triggered using the second input switch on wing 2.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nDisable solenoid switch configuration failed."
+        print("\nDisable solenoid switch configuration failed.")
         return 1904
     # Verify third solenoid triggers can be removed
     sendSetSolInputCmd(0x08, 0x86)
@@ -750,12 +762,12 @@ def TestSolInputConfig():
     sendSetSolInputCmd(0x11, 0x86)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nVerify third solenoid is not triggered with first solenoid input switch"
-    print "or second input switch on wing 2."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify third solenoid is not triggered with first solenoid input switch")
+    print("or second input switch on wing 2.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nDisable solenoid switch configuration failed."
+        print("\nDisable solenoid switch configuration failed.")
         return 1905
     # Verify two solenoids can be triggered by one input.  Dual wound flipper test
     sendSetSolInputCmd(0x08, 0x04)
@@ -770,27 +782,27 @@ def TestSolInputConfig():
     sendCfgIndSolCmd(0x04, 0x05, 0x00, 0x00)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nVerify first solenoid (flipper) and third solenoid is triggered with"
-    print "the first flipper input switch."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify first solenoid (flipper) and third solenoid is triggered with")
+    print("the first flipper input switch.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nDisable solenoid switch configuration failed."
+        print("\nDisable solenoid switch configuration failed.")
         return 1906
     sendSetSolInputCmd(0x08, 0x86)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nVerify flipper is disabled when input is removed."
-    print "Press and hold first flipper input switch, verify flipper is held."
-    print "Press (y) while holding the flipper button"
+    print("\nVerify flipper is disabled when input is removed.")
+    print("Press and hold first flipper input switch, verify flipper is held.")
+    print("Press (y) while holding the flipper button")
     ch = getChar()
     sendSetSolInputCmd(0x08, 0x84)
     retCode = rcvEomResp()
-    print "\nVerify first solenoid (flipper) is now off."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify first solenoid (flipper) is now off.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nDisable solenoid when switch configuration removed failed."
+        print("\nDisable solenoid when switch configuration removed failed.")
         return 1907
     return 0
 
@@ -801,11 +813,11 @@ def TestCancelSolConfig():
     retCode = rcvEomResp()
     if retCode: return (retCode)
     
-    print "\nVerify solenoid 0 can be canceled by tapping input switch"
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify solenoid 0 can be canceled by tapping input switch")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nCancel initial kick of solenoid failed."
+        print("\nCancel initial kick of solenoid failed.")
         return 2101
     return 0
 
@@ -820,73 +832,73 @@ def TestSolPwmConfig():
     retCode = rcvEomResp()
     if retCode: return (retCode)
     
-    print "\nVerify solenoid 0 initial kick and hold look the same"
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify solenoid 0 initial kick and hold look the same")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nInitial kick PWM set failed."
+        print("\nInitial kick PWM set failed.")
         return 2201
     # Change initial kick PWM back to 100%
     sendSolKickPwmCmd(0x1f, 0x04)
     retCode = rcvEomResp()
     if retCode: return (retCode)
     
-    print "\nVerify solenoid 0 initial kick is 100% on and hold looks dimmer"
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify solenoid 0 initial kick is 100% on and hold looks dimmer")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nInitial kick PWM set failed."
+        print("\nInitial kick PWM set failed.")
         return 2202
     return 0
 
 #Test incandescent commands.
 def TestIncandCmds():
     global versInt
-    print "\nVerify all LEDS are blinking slowly on the incandescent board."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify all LEDS are blinking slowly on the incandescent board.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nDefault incandescent state failed."
+        print("\nDefault incandescent state failed.")
         return 2001
     # Verify "on" bulbs override blinking.  Test incand "on" cmd
     sendIncandCmd(0x02, 0x0f000000)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nVerify first four LEDS are on, rest are blinking slowly."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify first four LEDS are on, rest are blinking slowly.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nIncandescent cmd override blinking failed."
+        print("\nIncandescent cmd override blinking failed.")
         return 2002
     # Verify bulbs turned "off" go back to blinking.  Test incand "off" cmd
     sendIncandCmd(0x03, 0x0f000000)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nVerify all LEDs are blinking slowly."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify all LEDs are blinking slowly.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nIncandescent cmd off goes back to blinking failed."
+        print("\nIncandescent cmd off goes back to blinking failed.")
         return 2003
     # Verify blink off command works.
     sendIncandCmd(0x06, 0xf0000000)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nVerify last four LEDs are off."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify last four LEDs are off.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nIncandescent cmd blink off failed."
+        print("\nIncandescent cmd blink off failed.")
         return 2004
     # Verify on command for non-blinking bulbs
     sendIncandCmd(0x02, 0xc0000000)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nVerify last two LEDs are on."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify last two LEDs are on.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nIncandescent cmd turn on failed."
+        print("\nIncandescent cmd turn on failed.")
         return 2005
     # Send blink off command for all bulbs.  Test fast blink
     # to every other bulb
@@ -898,141 +910,141 @@ def TestIncandCmds():
     sendIncandCmd(0x05, 0x55000000)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nVerify every other bulb starting at first bulb is blinking fast."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify every other bulb starting at first bulb is blinking fast.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nIncandescent cmd blink fast failed."
+        print("\nIncandescent cmd blink fast failed.")
         return 2006
     # Verify on command overides off and fast blink.  Turn on first
     # four bulbs
     sendIncandCmd(0x02, 0x0f000000)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nVerify first four bulbs are on."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify first four bulbs are on.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nIncandescent cmd turn on failed."
+        print("\nIncandescent cmd turn on failed.")
         return 2007
     # Verify incand set state command works.  Turn off all bulbs
     sendIncandCmd(0x80, 0xff000000)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nVerify all bulbs are off."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify all bulbs are off.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nIncandescent set state off failed."
+        print("\nIncandescent set state off failed.")
         return 2008
     # Verify incand set state to slow blink works for first four bulbs
     sendIncandCmd(0x82, 0x0f000000)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nVerify first four bulbs are blinking slowly."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify first four bulbs are blinking slowly.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nIncandescent set state slow blink failed."
+        print("\nIncandescent set state slow blink failed.")
         return 2009
     # Verify incand set state to fast blink works for last four bulbs
     sendIncandCmd(0x84, 0xf0000000)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nVerify last four bulbs are blinking fast."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify last four bulbs are blinking fast.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nIncandescent set state fast blink failed."
+        print("\nIncandescent set state fast blink failed.")
         return 2010
     # Verify incand on command over rides blinking
     sendIncandCmd(0x02, 0xff000000)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nVerify all bulbs are on."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify all bulbs are on.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nIncandescent on over-riding blinking failed."
+        print("\nIncandescent on over-riding blinking failed.")
         return 2011
     # Verify incand on/off all off command clears the blinking state
     sendIncandCmd(0x07, 0x00000000)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nVerify all bulbs are off."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify all bulbs are off.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nIncandescent on/off comand clears blinking states."
+        print("\nIncandescent on/off comand clears blinking states.")
         return 2012
     # Verify incand on/off masked on bulbs works
     sendIncandCmd(0x07, 0xaa000000)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nVerify every other bulb is on including last bulb."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify every other bulb is on including last bulb.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nIncandescent on/off comand forces bulbs on/off failed."
+        print("\nIncandescent on/off comand forces bulbs on/off failed.")
         return 2013
     # If version supports incand fades
     if (versInt >= 0x02010000):
-        print "\n\nTesting incand fade cmds."
+        print("\n\nTesting incand fade cmds.")
         # Turn off all the bulbs
         sendIncandCmd(0x07, 0x00000000)
         retCode = rcvEomResp()
         if retCode: return (retCode)
         # Verify turn bulbs on using fade cmd
-        neoData = ['\xff', '\xff', '\xff', '\xff', \
-            '\xff', '\xff', '\xff', '\xff']
+        neoData = [0xff, 0xff, 0xff, 0xff, \
+            0xff, 0xff, 0xff, 0xff]
         sendNeoCmd(4096 + 24, 0, neoData)
         retCode = rcvEomResp()
         if retCode: return (retCode)
-        print "\nVerify all incand bulbs are on."
-        print "Press (y) if working, (n) if not working."
+        print("\nVerify all incand bulbs are on.")
+        print("Press (y) if working, (n) if not working.")
         ch = getChar()
         if (ch != 'y') and (ch != 'Y'):
-            print "\nIncandescent On using fade failed."
+            print("\nIncandescent On using fade failed.")
             return 2014
         # Verify turn bulbs off using fade cmd
-        neoData = ['\x00', '\x00', '\x00', '\x00', \
-            '\x00', '\x00', '\x00', '\x00']
+        neoData = [0x00, 0x00, 0x00, 0x00, \
+            0x00, 0x00, 0x00, 0x00]
         sendNeoCmd(4096 + 24, 0, neoData)
         retCode = rcvEomResp()
         if retCode: return (retCode)
-        print "\nVerify all incand bulbs are off."
-        print "Press (y) if working, (n) if not working."
+        print("\nVerify all incand bulbs are off.")
+        print("Press (y) if working, (n) if not working.")
         ch = getChar()
         if (ch != 'y') and (ch != 'Y'):
-            print "\nIncandescent Off using fade failed."
+            print("\nIncandescent Off using fade failed.")
             return 2015
         # Verify intensities work
-        neoData = ['\x20', '\x40', '\x60', '\x80', \
-            '\xa0', '\xc0', '\xe0', '\xff']
+        neoData = [0x20, 0x40, 0x60, 0x80, \
+            0xa0, 0xc0, 0xe0, 0xff]
         sendNeoCmd(4096 + 24, 0, neoData)
         retCode = rcvEomResp()
         if retCode: return (retCode)
-        print "\nVerify incand bulbs are on from 12.5%, 25%...to 100% On."
-        print "Press (y) if working, (n) if not working."
+        print("\nVerify incand bulbs are on from 12.5%, 25%...to 100% On.")
+        print("Press (y) if working, (n) if not working.")
         ch = getChar()
         if (ch != 'y') and (ch != 'Y'):
-            print "Incandescent Intensity support using fade failed."
+            print("Incandescent Intensity support using fade failed.")
             return 2016
         # Verify fade on/fade off works
-        print "\nVerify Incand fade on/fade off working."
-        print "Fading from low intensity to high intensity"
-        print "in 2s, wait .1s, fade to off in 2s."
-        print "Press (y) if working, (n) if not working."
+        print("\nVerify Incand fade on/fade off working.")
+        print("Fading from low intensity to high intensity")
+        print("in 2s, wait .1s, fade to off in 2s.")
+        print("Press (y) if working, (n) if not working.")
         exitReq = False
         while (not exitReq):
-            neoData = ['\x20', '\x40', '\x60', '\x80', \
-                '\xa0', '\xc0', '\xe0', '\xff']
+            neoData = [0x20, 0x40, 0x60, 0x80, \
+                0xa0, 0xc0, 0xe0, 0xff]
             sendNeoCmd(4096 + 24, 2000, neoData)
             retCode = rcvEomResp()
             if retCode: return (retCode)
             time.sleep(2.1)
-            neoData = ['\x00', '\x00', '\x00', '\x00', \
-                '\x00', '\x00', '\x00', '\x00']
+            neoData = [0x00, 0x00, 0x00, 0x00, \
+                0x00, 0x00, 0x00, 0x00]
             sendNeoCmd(4096 + 24, 2000, neoData)
             retCode = rcvEomResp()
             if retCode: return (retCode)
@@ -1040,7 +1052,7 @@ def TestIncandCmds():
             while kbHit():
                 char = getAsynchChar()
                 if (char != 'y') and (char != 'Y'):
-                    print "\nIncand fade on/off failed."
+                    print("\nIncand fade on/off failed.")
                     retCode = 2017
                 else:
                     retCode = 0
@@ -1051,47 +1063,47 @@ def TestIncandCmds():
 
 #Test Neopixel commands.
 def TestNeopixelCmds():
-    print "\nVerify Neopixels display green, red, blue, green, red, blue, green, red."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify Neopixels display green, red, blue, green, red, blue, green, red.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
 
     if (ch != 'y') and (ch != 'Y'):
-        print "\nDefault Neopixel state failed."
+        print("\nDefault Neopixel state failed.")
         return 2101
     # Verify set color
-    neoData = ['\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-        '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-        '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-        '\x00', '\x00', '\x00', '\x00', '\x00', '\x00']
+    neoData = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
     sendNeoCmd(0, 0, neoData)
     retCode = rcvEomResp()
     if retCode: return (retCode)
-    print "\nVerify Neopixels are all off."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify Neopixels are all off.")
+    print("Press (y) if working, (n) if not working.")
     ch = getChar()
     if (ch != 'y') and (ch != 'Y'):
-        print "\nNeopixel set color failed."
+        print("\nNeopixel set color failed.")
         return 2102
     # Verify fade on/fade off works
-    print "\nVerify Neopixel fade on/fade off working."
-    print "Fading to 100% on in 2s, wait .1s, fade to off in 2s."
-    print "Colors are green, red, blue, yellow,"
-    print "magenta, cyan, white, 1/2 bright white."
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify Neopixel fade on/fade off working.")
+    print("Fading to 100% on in 2s, wait .1s, fade to off in 2s.")
+    print("Colors are green, red, blue, yellow,")
+    print("magenta, cyan, white, 1/2 bright white.")
+    print("Press (y) if working, (n) if not working.")
     exitReq = False
     while (not exitReq):
-        neoData = ['\xff', '\x00', '\x00', '\x00', '\xff', '\x00', \
-            '\x00', '\x00', '\xff', '\xff', '\xff', '\x00', \
-            '\x00', '\xff', '\xff', '\xff', '\x00', '\xff', \
-            '\xff', '\xff', '\xff', '\x80', '\x80', '\x80']
+        neoData = [0xff, 0x00, 0x00, 0x00, 0xff, 0x00, \
+            0x00, 0x00, 0xff, 0xff, 0xff, 0x00, \
+            0x00, 0xff, 0xff, 0xff, 0x00, 0xff, \
+            0xff, 0xff, 0xff, 0x80, 0x80, 0x80]
         sendNeoCmd(0, 2000, neoData)
         retCode = rcvEomResp()
         if retCode: return (retCode)
         time.sleep(2.1)
-        neoData = ['\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-            '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-            '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-            '\x00', '\x00', '\x00', '\x00', '\x00', '\x00']
+        neoData = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
         sendNeoCmd(0, 2000, neoData)
         retCode = rcvEomResp()
         if retCode: return (retCode)
@@ -1099,7 +1111,7 @@ def TestNeopixelCmds():
         while kbHit():
             char = getAsynchChar()
             if (char != 'y') and (char != 'Y'):
-                print "\nNeopixel fade on/off failed."
+                print("\nNeopixel fade on/off failed.")
                 retCode = 2103
             else:
                 retCode = 0
@@ -1108,16 +1120,16 @@ def TestNeopixelCmds():
     if retCode: return (retCode)
 
     # Verify offset and multiple fade rates
-    print "\nVerify offset and multiple fade rates working."
-    print "Fade green LEDs in 250ms,500ms, 750ms, 1s, 1.25s, 1.5s, 1.75s and 2s"
-    print "Fade off at same rates (fastest to slowest)"
-    print "Press (y) if working, (n) if not working."
+    print("\nVerify offset and multiple fade rates working.")
+    print("Fade green LEDs in 250ms,500ms, 750ms, 1s, 1.25s, 1.5s, 1.75s and 2s")
+    print("Fade off at same rates (fastest to slowest)")
+    print("Press (y) if working, (n) if not working.")
     numNeopixels = 8
     exitReq = False
     while (not exitReq):
         offset = 0
         fadeTime = 0
-        neoData = ['\xff']
+        neoData = [0xff]
         for i in range(numNeopixels):
             sendNeoCmd(offset, fadeTime, neoData, False)
             offset = offset + 3
@@ -1128,7 +1140,7 @@ def TestNeopixelCmds():
         time.sleep(2.1)
         offset = 0
         fadeTime = 0
-        neoData = ['\x00']
+        neoData = [0x00]
         for i in range(numNeopixels):
             sendNeoCmd(offset, fadeTime, neoData, False)
             offset = offset + 3
@@ -1140,7 +1152,7 @@ def TestNeopixelCmds():
         while kbHit():
             char = getAsynchChar()
             if (char != 'y') and (char != 'Y'):
-                print "\nNeopixel offset and multiple fade rates failed."
+                print("\nNeopixel offset and multiple fade rates failed.")
                 retCode = 2104
             else:
                 retCode = 0
@@ -1149,31 +1161,31 @@ def TestNeopixelCmds():
     if retCode: return (retCode)
 
     # Verify partial brightness fades
-    print "\nVerify partial brightness fades working."
-    print "Fade 0%-25%, 25%-50%, 50%-75%, 75%-100%,"
-    print "25%-0%, 50%-25%, 75%-50%, 100%-75% and fade back"
-    print "Press (y) if working, (n) if not working."
-    neoData = ['\x00', '\x00', '\x00', '\x40', '\x40', '\x40', \
-        '\x80', '\x80', '\x80', '\xc0', '\xc0', '\xc0', \
-        '\x40', '\x40', '\x40', '\x80', '\x80', '\x80', \
-        '\xc0', '\xc0', '\xc0', '\xff', '\xff', '\xff']
+    print("\nVerify partial brightness fades working.")
+    print("Fade 0%-25%, 25%-50%, 50%-75%, 75%-100%,")
+    print("25%-0%, 50%-25%, 75%-50%, 100%-75% and fade back")
+    print("Press (y) if working, (n) if not working.")
+    neoData = [0x00, 0x00, 0x00, 0x40, 0x40, 0x40, \
+        0x80, 0x80, 0x80, 0xc0, 0xc0, 0xc0, \
+        0x40, 0x40, 0x40, 0x80, 0x80, 0x80, \
+        0xc0, 0xc0, 0xc0, 0xff, 0xff, 0xff]
     sendNeoCmd(0, 0, neoData)
     retCode = rcvEomResp()
     if retCode: return (retCode)
     exitReq = False
     while (not exitReq):
-        neoData = ['\x40', '\x40', '\x40', '\x80', '\x80', '\x80', \
-            '\xc0', '\xc0', '\xc0', '\xff', '\xff', '\xff', \
-            '\x00', '\x00', '\x00', '\x40', '\x40', '\x40', \
-            '\x80', '\x80', '\x80', '\xc0', '\xc0', '\xc0']
+        neoData = [0x40, 0x40, 0x40, 0x80, 0x80, 0x80, \
+            0xc0, 0xc0, 0xc0, 0xff, 0xff, 0xff, \
+            0x00, 0x00, 0x00, 0x40, 0x40, 0x40, \
+            0x80, 0x80, 0x80, 0xc0, 0xc0, 0xc0]
         sendNeoCmd(0, 2000, neoData)
         retCode = rcvEomResp()
         if retCode: return (retCode)
         time.sleep(2.1)
-        neoData = ['\x00', '\x00', '\x00', '\x40', '\x40', '\x40', \
-            '\x80', '\x80', '\x80', '\xc0', '\xc0', '\xc0', \
-            '\x40', '\x40', '\x40', '\x80', '\x80', '\x80', \
-            '\xc0', '\xc0', '\xc0', '\xff', '\xff', '\xff']
+        neoData = [0x00, 0x00, 0x00, 0x40, 0x40, 0x40, \
+            0x80, 0x80, 0x80, 0xc0, 0xc0, 0xc0, \
+            0x40, 0x40, 0x40, 0x80, 0x80, 0x80, \
+            0xc0, 0xc0, 0xc0, 0xff, 0xff, 0xff]
         sendNeoCmd(0, 2000, neoData)
         retCode = rcvEomResp()
         if retCode: return (retCode)
@@ -1181,7 +1193,7 @@ def TestNeopixelCmds():
         while kbHit():
             char = getAsynchChar()
             if (char != 'y') and (char != 'Y'):
-                print "\nNeopixel fade on/off failed."
+                print("\nNeopixel fade on/off failed.")
                 retCode = 2105
             else:
                 retCode = 0
@@ -1190,10 +1202,10 @@ def TestNeopixelCmds():
     if retCode: return (retCode)
 
     # Turn all LEDs off
-    neoData = ['\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-        '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-        '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', \
-        '\x00', '\x00', '\x00', '\x00', '\x00', '\x00']
+    neoData = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
     sendNeoCmd(0, 0, neoData)
     retCode = rcvEomResp()
     if retCode: return (retCode)
@@ -1206,30 +1218,28 @@ def sendInpCfgCmd(cfgNum):
     global gen2AddrArr
     cmdArr = []
     cmdArr.append(gen2AddrArr[0])
-    cmdArr.append(rs232Intf.CFG_INP_CMD)
-    for loop in range(rs232Intf.NUM_G2_INP_PER_BRD):
+    cmdArr.append(rs232BIntf.CFG_INP_CMD)
+    for loop in range(rs232BIntf.NUM_G2_INP_PER_BRD):
         if loadCfg:
             cmdArr.append(cfgFile.inpCfg[cfgNum][loop])
         else:
             cmdArr.append(inpCfg[cfgNum][loop])
     cmdArr.append(calcCrc8(cmdArr))
-    cmdArr.append(rs232Intf.EOM_CMD)
-    sendCmd = ''.join(cmdArr)
-    ser.write(sendCmd)
+    cmdArr.append(rs232BIntf.EOM_CMD)
+    ser.write(cmdArr)
     return (0)
 
 #rcv end of message resp
 def sendEom():
     cmdArr = []
-    cmdArr.append(rs232Intf.EOM_CMD)
-    sendCmd = ''.join(cmdArr)
-    ser.write(sendCmd)
+    cmdArr.append(rs232BIntf.EOM_CMD)
+    ser.write(cmdArr)
     return (0)
 
 #rcv end of message resp
 def rcvEomResp():
     data = getSerialData();
-    if (data[0] != rs232Intf.EOM_CMD):
+    if (data[0] != rs232BIntf.EOM_CMD):
         return (800)
     return (0)
 
@@ -1238,7 +1248,7 @@ def sendReadInpBrdCmd():
     global ser
     global numGen2Brd
     global gen2AddrArr
-    sendStd4ByteCmd(rs232Intf.READ_GEN2_INP_CMD)
+    sendStd4ByteCmd(rs232BIntf.READ_GEN2_INP_CMD)
     return (0)
 
 #rcv read input cmd
@@ -1249,22 +1259,22 @@ def rcvReadInpResp():
     global currInpData
     data = getSerialData();
     if (data[0] != gen2AddrArr[0]):
-        print "\nData = %d, expected = %d" % (ord(data[0]),ord(gen2AddrArr[0]))
-        print repr(data)
+        print("\nData = {0}, expected = {1}".format(data[0],gen2AddrArr[0]))
+        print(repr(data))
         return (1000)
-    if (data[1] != rs232Intf.READ_GEN2_INP_CMD):
-        print "\nData = %d, expected = %d" % (ord(data[1]),ord(rs232Intf.READ_GEN2_INP_CMD))
-        print repr(data)
+    if (data[1] != rs232BIntf.READ_GEN2_INP_CMD):
+        print("\nData = {0}, expected = {1}".format(data[1],rs232BIntf.READ_GEN2_INP_CMD))
+        print(repr(data))
         return (1001)
     tmpData = [ data[0], data[1], data[2], data[3], data[4], data[5] ]
     crc8 = calcCrc8(tmpData)
     if (data[6] != crc8):
-        print "\nBad CRC, Data = %d, expected = %d" % (ord(data[6]),crc8)
+        print("\nBad CRC, Data = {0}, expected = {1}".format(data[6],crc8))
         return (1002)
-    if (data[7] != rs232Intf.EOM_CMD):
-        print "\nData = %d, expected = %d" % (ord(data[7]),ord(rs232Intf.EOM_CMD))
+    if (data[7] != rs232BIntf.EOM_CMD):
+        print("\nData = {0}, expected = {1}".format(data[7],rs232BIntf.EOM_CMD))
         return (1003)
-    currInpData[0] = (ord(data[2]) << 24) | (ord(data[3]) << 16) | (ord(data[4]) << 8) | ord(data[5])
+    currInpData[0] = (data[2] << 24) | (data[3] << 16) | (data[4] << 8) | data[5]
     return (0)
 
 #send sol cfg cmd
@@ -1274,62 +1284,81 @@ def sendSolCfgCmd(cfgNum):
     global gen2AddrArr
     cmdArr = []
     cmdArr.append(gen2AddrArr[0])
-    cmdArr.append(rs232Intf.CFG_SOL_CMD)
-    for loop in xrange(rs232Intf.NUM_G2_SOL_PER_BRD):
+    cmdArr.append(rs232BIntf.CFG_SOL_CMD)
+    for loop in range(rs232BIntf.NUM_G2_SOL_PER_BRD):
         cmdArr.append(solCfg[cfgNum][loop * 3])
         cmdArr.append(solCfg[cfgNum][(loop * 3) + 1])
         cmdArr.append(solCfg[cfgNum][(loop * 3) + 2])
     cmdArr.append(calcCrc8(cmdArr))
-    cmdArr.append(rs232Intf.EOM_CMD)
-    sendCmd = ''.join(cmdArr)
-    ser.write(sendCmd)
+    cmdArr.append(rs232BIntf.EOM_CMD)
+    ser.write(cmdArr)
     return (0)
 
 #send read wing cfg board
 def sendReadWingCfgCmd():
-    sendStd4ByteCmd(rs232Intf.GET_GEN2_CFG)
+    sendStd4ByteCmd(rs232BIntf.GET_GEN2_CFG)
     return (0)
 
 #rcv read wing cfg resp
 def rcvReadWingCfgResp():
     global ser
     global gen2AddrArr
-    global currSolData
     global currWingCfg
+    global hasMatrix
     data = getSerialData();
     if (data[0] != gen2AddrArr[0]):
-        print "\nData = %d, expected = %d" % (ord(data[0]),ord(gen2AddrArr[0]))
-        print repr(data)
-        return (1300)
-    if (data[1] != rs232Intf.GET_GEN2_CFG):
-        print "\nData = %d, expected = %d" % (ord(data[1]),ord(rs232Intf.GET_GEN2_CFG))
-        print repr(data)
-        return (1301)
+        print ("\nData = {0}, expected = {1}".format(data[0],gen2AddrArr[0]))
+        print (repr(data))
+        return (700)
+    if (data[1] != rs232BIntf.GET_GEN2_CFG):
+        print ("\nData = {0}, expected = {1}".format(data[1],rs232BIntf.GET_GEN2_CFG))
+        print (repr(data))
+        return (701)
     tmpData = [ data[0], data[1], data[2], data[3], data[4], data[5] ]
     crc8 = calcCrc8(tmpData)
     if (data[6] != crc8):
-        print "\nBad CRC, Data = %d, expected = %d" % (ord(data[6]),crc8)
-        return (1302)
-    if (data[7] != rs232Intf.EOM_CMD):
-        print "\nData = %d, expected = %d" % (ord(data[7]),ord(rs232Intf.EOM_CMD))
-        return (1303)
-    currWingCfg[0] = (ord(data[2]) << 24) | (ord(data[3]) << 16) | (ord(data[4]) << 8) | ord(data[5])
-    print hex(ord(gen2AddrArr[0])),"WingCfg = 0x{:08x}".format(currWingCfg[0])
-    print hex(ord(gen2AddrArr[0])),
-    for index in xrange(rs232Intf.NUM_G2_WING_PER_BRD):
-        if data[index + 2] == rs232Intf.WING_SOL:
-            print "SOL_WING ",
-        elif data[index + 2] == rs232Intf.WING_INP:
-            print "INP_WING ",
-        elif data[index + 2] == rs232Intf.WING_INCAND:
-            print "INCAND_WING ",
-        elif data[index + 2] == rs232Intf.WING_SW_MATRIX_OUT:
-            print "SW_MATRIX_OUT_WING ",
-        elif data[index + 2] == rs232Intf.WING_SW_MATRIX_IN:
-            print "SW_MATRIX_IN_WING ",
-        elif data[index + 2] == rs232Intf.WING_NEO:
-            print "NEO_WING ",
-    print ""
+        print ("\nBad CRC, Data = {0}, expected = {1}".format(data[6],crc8))
+        return (702)
+    if (data[7] != rs232BIntf.EOM_CMD):
+        print ("\nData = {0}, expected = {1}".format(data[7],rs232BIntf.EOM_CMD))
+        return (703)
+    currWingCfg[0] = (data[2] << 24) | (data[3] << 16) | (data[4] << 8) | data[5]
+    print ("{0} WingCfg = {1}".format("0x%02x" % gen2AddrArr[0], "0x%08x" % currWingCfg[0]))
+    print ("{}".format("0x%02x" % gen2AddrArr[0]), end=" ")
+    for index in range(rs232BIntf.NUM_G2_WING_PER_BRD):
+        outStr = "W[%d]:" % index
+        if data[index + 2] == rs232BIntf.WING_SOL:
+            outStr += "SOL_WING"
+        elif data[index + 2] == rs232BIntf.WING_INP:
+            outStr += "INP_WING"
+        elif data[index + 2] == rs232BIntf.WING_INCAND:
+            outStr += "INCAND_WING"
+        elif data[index + 2] == rs232BIntf.WING_SW_MATRIX_OUT:
+            outStr += "SW_MATRIX_OUT_WING"
+        elif data[index + 2] == rs232BIntf.WING_SW_MATRIX_IN:
+            outStr += "SW_MATRIX_IN_WING"
+            hasMatrix[0] = True
+        elif data[index + 2] == rs232BIntf.WING_NEO:
+            outStr += "NEO_WING"
+        elif data[index + 2] == rs232BIntf.WING_HI_SIDE_INCAND:
+            outStr += "INCAND_HI_WING"
+        elif data[index + 2] == rs232BIntf.WING_NEO_SOL:
+            outStr += "NEO_SOL_WING"
+        elif data[index + 2] == rs232BIntf.WING_SPI:
+            outStr += "SPI_WING"
+        elif data[index + 2] == rs232BIntf.WING_SW_MATRIX_OUT_LOW:
+            outStr += "SW_MATRIX_OUT_LOW_WING"
+        elif data[index + 2] == rs232BIntf.WING_LAMP_MATRIX_COL:
+            outStr += "LAMP_MATRIX_COL_WING"
+        elif data[index + 2] == rs232BIntf.WING_LAMP_MATRIX_ROW:
+            outStr += "LAMP_MATRIX_ROW_WING"
+        else:
+            outStr += "Error"
+        if index < rs232BIntf.NUM_G2_WING_PER_BRD - 1:
+            outStr += ","
+            print (outStr, end=" ")
+        else:
+            print (outStr)
     return (0)
 
 #send wing cfg cmd
@@ -1339,16 +1368,15 @@ def sendWingCfgCmd():
     global gen2AddrArr
     cmdArr = []
     cmdArr.append(gen2AddrArr[0])
-    cmdArr.append(rs232Intf.SET_GEN2_CFG)
-    for loop in range(rs232Intf.NUM_G2_WING_PER_BRD):
+    cmdArr.append(rs232BIntf.SET_GEN2_CFG)
+    for loop in range(rs232BIntf.NUM_G2_WING_PER_BRD):
         if loadCfg:
             cmdArr.append(cfgFile.wingCfg[0][loop])
         else:
             cmdArr.append(wingCfg[0][loop])
     cmdArr.append(calcCrc8(cmdArr))
-    cmdArr.append(rs232Intf.EOM_CMD)
-    sendCmd = ''.join(cmdArr)
-    ser.write(sendCmd)
+    cmdArr.append(rs232BIntf.EOM_CMD)
+    ser.write(cmdArr)
     return (0)
 
 #send color table cfg cmd
@@ -1358,16 +1386,15 @@ def sendColorCfgCmd():
     global gen2AddrArr
     cmdArr = []
     cmdArr.append(gen2AddrArr[0])
-    cmdArr.append(rs232Intf.SET_NEO_COLOR_TBL)
-    for loop in range((rs232Intf.NUM_COLOR_TBL * 3) + 1):
+    cmdArr.append(rs232BIntf.SET_NEO_COLOR_TBL)
+    for loop in range((rs232BIntf.NUM_COLOR_TBL * 3) + 1):
         if loadCfg:
             cmdArr.append(cfgFile.colorCfg[0][loop])
         else:
             cmdArr.append(colorCfg[0][loop])
     cmdArr.append(calcCrc8(cmdArr))
-    cmdArr.append(rs232Intf.EOM_CMD)
-    sendCmd = ''.join(cmdArr)
-    ser.write(sendCmd)
+    cmdArr.append(rs232BIntf.EOM_CMD)
+    ser.write(cmdArr)
     return (0)
 
 #send kick solenoid cmd
@@ -1376,15 +1403,14 @@ def sendKickSolCmd(solenoids, mask):
     global gen2AddrArr
     cmdArr = []
     cmdArr.append(gen2AddrArr[0])
-    cmdArr.append(rs232Intf.KICK_SOL_CMD)
-    cmdArr.append(chr((solenoids >> 8) & 0xff))
-    cmdArr.append(chr(solenoids & 0xff))
-    cmdArr.append(chr((mask >> 8) & 0xff))
-    cmdArr.append(chr(mask & 0xff))
+    cmdArr.append(rs232BIntf.KICK_SOL_CMD)
+    cmdArr.append((solenoids >> 8) & 0xff)
+    cmdArr.append(solenoids & 0xff)
+    cmdArr.append((mask >> 8) & 0xff)
+    cmdArr.append(mask & 0xff)
     cmdArr.append(calcCrc8(cmdArr))
-    cmdArr.append(rs232Intf.EOM_CMD)
-    sendCmd = ''.join(cmdArr)
-    ser.write(sendCmd)
+    cmdArr.append(rs232BIntf.EOM_CMD)
+    ser.write(cmdArr)
     return (0)
 
 #send cfg individual solenoid cmd
@@ -1393,15 +1419,14 @@ def sendCfgIndSolCmd(solIndex, cmd, initKick, offHold):
     global gen2AddrArr
     cmdArr = []
     cmdArr.append(gen2AddrArr[0])
-    cmdArr.append(rs232Intf.CFG_IND_SOL_CMD)
-    cmdArr.append(chr(solIndex))
-    cmdArr.append(chr(cmd))
-    cmdArr.append(chr(initKick))
-    cmdArr.append(chr(offHold))
+    cmdArr.append(rs232BIntf.CFG_IND_SOL_CMD)
+    cmdArr.append(solIndex)
+    cmdArr.append(cmd)
+    cmdArr.append(initKick)
+    cmdArr.append(offHold)
     cmdArr.append(calcCrc8(cmdArr))
-    cmdArr.append(rs232Intf.EOM_CMD)
-    sendCmd = ''.join(cmdArr)
-    ser.write(sendCmd)
+    cmdArr.append(rs232BIntf.EOM_CMD)
+    ser.write(cmdArr)
     return (0)
 
 #send set solenoid input cmd
@@ -1410,13 +1435,12 @@ def sendSetSolInputCmd(inpIndex, solIndex):
     global gen2AddrArr
     cmdArr = []
     cmdArr.append(gen2AddrArr[0])
-    cmdArr.append(rs232Intf.SET_SOL_INPUT_CMD)
-    cmdArr.append(chr(inpIndex))
-    cmdArr.append(chr(solIndex))
+    cmdArr.append(rs232BIntf.SET_SOL_INPUT_CMD)
+    cmdArr.append(inpIndex)
+    cmdArr.append(solIndex)
     cmdArr.append(calcCrc8(cmdArr))
-    cmdArr.append(rs232Intf.EOM_CMD)
-    sendCmd = ''.join(cmdArr)
-    ser.write(sendCmd)
+    cmdArr.append(rs232BIntf.EOM_CMD)
+    ser.write(cmdArr)
     return (0)
 
 #send solenoid kick PWM cmd
@@ -1425,13 +1449,12 @@ def sendSolKickPwmCmd(pwmVal, solIndex):
     global gen2AddrArr
     cmdArr = []
     cmdArr.append(gen2AddrArr[0])
-    cmdArr.append(rs232Intf.SOL_KICK_PWM)
-    cmdArr.append(chr(pwmVal))
-    cmdArr.append(chr(solIndex))
+    cmdArr.append(rs232BIntf.SOL_KICK_PWM)
+    cmdArr.append(pwmVal)
+    cmdArr.append(solIndex)
     cmdArr.append(calcCrc8(cmdArr))
-    cmdArr.append(rs232Intf.EOM_CMD)
-    sendCmd = ''.join(cmdArr)
-    ser.write(sendCmd)
+    cmdArr.append(rs232BIntf.EOM_CMD)
+    ser.write(cmdArr)
     return (0)
 
 #send incandescent cmd
@@ -1440,16 +1463,15 @@ def sendIncandCmd(subCmd, mask):
     global gen2AddrArr
     cmdArr = []
     cmdArr.append(gen2AddrArr[0])
-    cmdArr.append(rs232Intf.INCAND_CMD)
-    cmdArr.append(chr(subCmd))
-    cmdArr.append(chr((mask >> 24) & 0xff))
-    cmdArr.append(chr((mask >> 16) & 0xff))
-    cmdArr.append(chr((mask >> 8) & 0xff))
-    cmdArr.append(chr(mask & 0xff))
+    cmdArr.append(rs232BIntf.INCAND_CMD)
+    cmdArr.append(subCmd)
+    cmdArr.append((mask >> 24) & 0xff)
+    cmdArr.append((mask >> 16) & 0xff)
+    cmdArr.append((mask >> 8) & 0xff)
+    cmdArr.append(mask & 0xff)
     cmdArr.append(calcCrc8(cmdArr))
-    cmdArr.append(rs232Intf.EOM_CMD)
-    sendCmd = ''.join(cmdArr)
-    ser.write(sendCmd)
+    cmdArr.append(rs232BIntf.EOM_CMD)
+    ser.write(cmdArr)
     return (0)
 
 #send Neopixel cmd
@@ -1458,29 +1480,28 @@ def sendNeoCmd(offset, fadeTime, data, sendEom=True):
     global gen2AddrArr
     cmdArr = []
     cmdArr.append(gen2AddrArr[0])
-    cmdArr.append(rs232Intf.RS232I_NEO_FADE_CMD)
-    cmdArr.append(chr((offset >> 8) & 0xff))
-    cmdArr.append(chr(offset & 0xff))
+    cmdArr.append(rs232BIntf.RS232I_NEO_FADE_CMD)
+    cmdArr.append((offset >> 8) & 0xff)
+    cmdArr.append(offset & 0xff)
     dataLen = len(data)
-    cmdArr.append(chr((dataLen >> 8) & 0xff))
-    cmdArr.append(chr(dataLen & 0xff))
-    cmdArr.append(chr((fadeTime >> 8) & 0xff))
-    cmdArr.append(chr(fadeTime & 0xff))
+    cmdArr.append((dataLen >> 8) & 0xff)
+    cmdArr.append(dataLen & 0xff)
+    cmdArr.append((fadeTime >> 8) & 0xff)
+    cmdArr.append(fadeTime & 0xff)
     for tmp in data:
         cmdArr.append(tmp)
     cmdArr.append(calcCrc8(cmdArr))
     if (sendEom):
-        cmdArr.append(rs232Intf.EOM_CMD)
-    sendCmd = ''.join(cmdArr)
-    ser.write(sendCmd)
+        cmdArr.append(rs232BIntf.EOM_CMD)
+    ser.write(cmdArr)
     return (0)
 
 def endTest(error):
     global ser
     global errMsg
-    print "\nError code =", error
+    print("\nError code = {0}".format(error))
     ser.close()
-    print "\nPress any key to close window"
+    print("\nPress any key to close window")
     ch = getChar()
     sys.exit(error)
  
@@ -1525,38 +1546,38 @@ for arg in sys.argv:
     skipSaveStdCfg = True
     stm32 = True
   elif arg.startswith('-?'):
-    print "python RegrTestG2.py [OPTIONS]"
-    print "    -?                 Options Help"
-    print "    -port=portName     COM port number, defaults to COM1"
-    print "    -vers=version num  Ex. 0.1.1.0"
-    print "    -skipProg          Skip programming (used for debugging tests)"
-    print "    -skipSaveStdCfg    Skip saving standard config (used for debugging tests)"
-    print "    -skipSolTests      Skip solenoid tests"
-    print "    -skipIncandTests   Skip incandescent tests"
-    print "    -skipSerNumTests   Skip serial number tests"
-    print "    -skipNeopixelTests Skip Neopixel tests"
-    print "    -psoc4200          Test PSOC4200"
-    print "    -stm32             Test STM32 (skips programming and saving standard config)"
+    print("python RegrTestG2.py [OPTIONS]")
+    print("    -?                 Options Help")
+    print("    -port=portName     COM port number, defaults to COM1")
+    print("    -vers=version num  Ex. 0.1.1.0")
+    print("    -skipProg          Skip programming (used for debugging tests)")
+    print("    -skipSaveStdCfg    Skip saving standard config (used for debugging tests)")
+    print("    -skipSolTests      Skip solenoid tests")
+    print("    -skipIncandTests   Skip incandescent tests")
+    print("    -skipSerNumTests   Skip serial number tests")
+    print("    -skipNeopixelTests Skip Neopixel tests")
+    print("    -psoc4200          Test PSOC4200")
+    print("    -stm32             Test STM32 (skips programming and saving standard config)")
     end = True
 
 if end:
-    print "\nPress any key to close window"
+    print("\nPress any key to close window")
     ch = getChar()
     sys.exit(0)
 try:
     ser=serial.Serial(port, baudrate=115200, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=.1)
 except serial.SerialException:
-    print "\nCould not open " + port
-    print "\nPress any key to close window"
+    print("\nCould not open {0}".format(port))
+    print("\nPress any key to close window")
     ch = getChar()
     sys.exit(1)
-print "Sending inventory cmd"
+print("Sending inventory cmd")
 sendInvCmd()
 rcvInvResp()
 
 # Verify only a single board is attached
 if (numGen2Brd != 1):
-    print "Only one board should be attached.  Exiting regression tests."
+    print("Only one board should be attached.  Exiting regression tests.")
     sys.exit(2)
     
 #Get the current configuration
@@ -1565,8 +1586,8 @@ rcvReadWingCfgResp()
     
 # Verify the board is configured as Neopixel, solenoid, input and incandescent
 if (currWingCfg[0] != 0x06010203):
-    print "Regression testing board must have wing board configuration of:"
-    print "Neopixel, solenoid, input, incandescent.  Exiting regression tests."
+    print("Regression testing board must have wing board configuration of:")
+    print("Neopixel, solenoid, input, incandescent.  Exiting regression tests.")
     sys.exit(3)
 
 # Update code to newest version, also verifies go to bootloader command works
@@ -1632,7 +1653,7 @@ if not skipNeopixelTests:
     retCode = runTest(TestNeopixelCmds)
     if retCode != 0: sys.exit(retCode)
 
-print "\nSuccessful completion."
-print "\nPress any key to close window"
+print("\nSuccessful completion.")
+print("\nPress any key to close window")
 ch = getChar()
 sys.exit(0)

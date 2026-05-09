@@ -67,7 +67,7 @@ FLASH (rx)      : ORIGIN = 0x8001000, LENGTH = 60K
 }
 
 TARGET(binary) /* specify file is binary format */
-INPUT(../../Booty/Debug/Booty.bin)
+INPUT("@BOOTLOADER_BIN_PATH@")     /* This path will be replaced by CMake */
 OUTPUT_FORMAT(default) /* Restore the out file format */
 
 /* Define output sections */
@@ -76,7 +76,9 @@ SECTIONS
   /* Load the bootloader section */
   .booty :
   {
-    ../../Booty/Debug/Booty.bin
+    . = ALIGN(4);
+   "@BOOTLOADER_BIN_PATH@"; /* Bootloader built binary */
+    . = ALIGN(4);
   } >BOOT_FLASH
 
   /* The startup code goes first into FLASH */
@@ -145,7 +147,7 @@ SECTIONS
   _sidata = LOADADDR(.data);
 
   /* Initialized data sections goes into RAM, load LMA copy after code */
-  .data : 
+  .data :
   {
     . = ALIGN(4);
     _sdata = .;        /* create a global symbol at data start */
@@ -162,7 +164,7 @@ SECTIONS
     _app_crc32 = .;    /* create a global symbol to mark CRC32 location */
     LONG(0)            /* Allocate flash location that will store CRC32 */
   }  >FLASH
-  
+
   /* Uninitialized data section */
   . = ALIGN(4);
   .bss :
@@ -190,7 +192,7 @@ SECTIONS
     . = ALIGN(8);
   } >RAM
 
-  
+
 
   /* Remove information from the standard libraries */
   /DISCARD/ :
@@ -202,5 +204,3 @@ SECTIONS
 
   .ARM.attributes 0 : { *(.ARM.attributes) }
 }
-
-

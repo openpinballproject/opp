@@ -1,0 +1,7 @@
+_build/
+_logs/
+*-TEMP.bin
+*-TEMP.elf
+*-TEMP.hex
+
+__pycache__/
