@@ -896,11 +896,11 @@ elif (upgrade):
             ser.close()
 
             # Make a system call to upgrade the firmware
-            os.chdir("..\cyflash")
+            os.chdir(".." + os.sep + "cyflash")
             cmdLine = sys.executable + " -m cyflash.__main__ --serial " + port + " --serial_baudrate 115200 ../../Creator/Gen2Images/Gen2.rev" + newestVers + ".cyacd"
             print ("Running cmdLine = \"{0}\"".format(cmdLine))
             os.system(cmdLine)
-            os.chdir("..\Gen2Test")
+            os.chdir(".." + os.sep + "Gen2Test")
 
             # reconnect to the serial port
             print ("Reconnecting to COM port")

@@ -50,6 +50,6 @@
 #ifndef VERSGLOB_H
 #define VERSGLOB_H
  
-#define VERSG_CODE_VERS                0x03000000
+#define VERSG_CODE_VERS                0x03000001
 
 #endif

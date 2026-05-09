@@ -3,3 +3,5 @@ _logs/
 *-TEMP.bin
 *-TEMP.elf
 *-TEMP.hex
+
+__pycache__/
