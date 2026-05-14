@@ -115,15 +115,28 @@ typedef struct
    U8                         offCnt;
    U32                        kickIntenMask;
    U32                        holdIntenMask;
-   INT                        bit;
+   U32                        drvBit;
    INT                        startMs;
    U32                        inpBits;
+   U32                        spiInpBits[2];
 } DIG_SOL_STATE_T;
+
+typedef struct
+{
+   DIG_SOL_STATE_T            state;
+   RS232I_SOL25_CFG_T     	  cfg;
+} DIG_SOL_INFO_T;
 
 typedef struct
 {
    INT                        cnt;
 } DIG_INP_STATE_T;
+
+typedef struct
+{
+	DIG_INP_STATE_T           state;
+	RS232I_CFG_INP_TYPE_E     cfg;
+} DIG_INP_INFO_T;
 
 #define MATRIX_FIRE_SOL       0x80
 #define MATRIX_SOL_MASK       0x07
@@ -136,7 +149,12 @@ typedef struct
 {
    U8                         cnt;
    U8                         sol;
-} DIG_MTRX_BIT_INFO_T;
+} DIG_MTRX_SPI_BIT_INFO_T;
+
+typedef struct
+{
+   DIG_MTRX_SPI_BIT_INFO_T    info[RS232I_NUM_SW_MATRX_SPI_INP];
+} DIG_MATRIX_SPI_INFO_T;
 
 typedef struct
 {
@@ -145,8 +163,7 @@ typedef struct
    U8                         mtrxWaitCntThresh;
    U8                         mtrxDebounceThresh;
    BOOL                       mtrxActHigh;
-   DIG_MTRX_BIT_INFO_T        info[RS232I_SW_MATRX_INP];
-} DIG_MATRIX_DATA_T;
+} DIG_MATRIX_CFG_T;
 
 typedef struct
 {
@@ -156,7 +173,6 @@ typedef struct
 
 typedef struct
 {
-   U16                        solMask;
    U32                        prevInputs;
    U32                        filtInputs;
    U32                        mtrxInpMask;
@@ -164,10 +180,10 @@ typedef struct
    U32                        outputUpd;
    U32                        outputMask;
    U32                        solOutMask;
-   DIG_PORT_DATA_T            updPort[STDLI_NUM_DIG_PORT];
-   DIG_MATRIX_DATA_T          mtrxData;
-   DIG_INP_STATE_T            inpState[RS232I_NUM_GEN2_INP];
-   DIG_SOL_STATE_T            solState[RS232I_NUM_GEN2_SOL];
+   DIG_MATRIX_CFG_T           mtrxCfg;
+   DIG_MATRIX_SPI_INFO_T      mtrxSpi;
+   DIG_INP_INFO_T             inpInfo[RS232I_NUM_GEN25_INP];
+   DIG_SOL_INFO_T             solInfo[RS232I_NUM_GEN25_SOL];
 } DIG_GLOB_T;
 
 DIG_GLOB_T                    dig_info;
@@ -182,7 +198,7 @@ void digital_set_kick_pwm(
    U8                         kickPwm,
    U8                         solIndex);
 void digital_upd_sol_cfg(
-   U16                        updMask);
+   U32                        numSol);
 void digital_upd_inp_cfg(
    U32                        updMask);
 void digital_upd_outputs(
@@ -191,7 +207,7 @@ void digital_upd_outputs(
 
 /*
  * ===============================================================================
- * 
+ *
  * Name: digital_init
  * 
  * ===============================================================================
@@ -211,354 +227,325 @@ void digital_upd_outputs(
  */
 void digital_init(void) 
 {
-   DIG_SOL_STATE_T            *solState_p;
-   INT                        index;
-   BOOL                       foundSol = FALSE;
-   RS232I_CFG_INP_TYPE_E      *inpCfg_p;
-   RS232I_SOL_CFG_T           *solCfg_p;
    U32                        outputMask = 0;
    GPIO_InitTypeDef           pinCfg;
    BOOL                       usedBit;
-   INT                        input;
-   U32                        currBit;
 
-#define INPUT_BIT_MASK        0xff
-#define DBG_INPUT_BIT_MASK    0xfe
-#define INCAND_OUTP_MASK      0xff
-#define DBG_INCAND_OUTP_MASK  0xfe
+#define ALL_PINS_BIT_MASK     0xff
 #define NEO_INP_BIT_MASK      0xef
-#define DBG_NEO_INP_BIT_MASK  0xee
 #define NEO_OUT_BIT_MASK      0x10
 #define NEO_SOL_INP_BIT_MASK  0x0e
 #define NEO_SOL_OUT_BIT_MASK  0xf1
-#define DBG_NEO_SOL_OUT_BIT_MASK  0xf0
+#define NEO_SPI_CLK_BIT_MASK  0x0f
 #define SOL_MASK              0x0f
-#define DBG_NEO_SOL_MASK      0x0e
 #define SOL_INP_BIT_MASK      0x0f  
-#define DBG_SOL_INP_BIT_MASK  0x0e
-#define SOL_OUTP_BIT_MASK     0xf0
+#define SOL_OUT_BIT_MASK      0xf0
 
 #define MTRX_INPUT_BIT_MASK   0xff000000
 #define MTRX_OUTPUT_BIT_MASK  0x00ff0000
 #define DBG_MTRX_OUT_BIT_MASK 0x00fe0000
+#define DBG_PIN_BIT_MASK      0x00010001
+#define MAX_SOL_MASK          0x000f000f
+#define SPI_INP_BIT_MASK      0xf4000000
+#define SPI_OUT_BIT_MASK      0x0b000000
    
-   if (gen2g_info.inpCfg_p == NULL)
+   /* Init gen2g structure */
+   U32 *u32_p = (U32 *)&dig_info;
+   for (INT index = 0; index < sizeof(dig_info)/sizeof(U32); index++)
    {
-      for (solState_p = &dig_info.solState[0], index = 0;
-         index < RS232I_NUM_GEN2_SOL; index++, solState_p++)
-      {
-         solState_p->solState = SOL_STATE_IDLE;
-         solState_p->bit = 1 << (((index >> 2) << 3) + (index & 0x03) + 4);
-         solState_p->inpBits = 0;
-         solState_p->kickIntenMask = 0xffffffff;
-      }
-      dig_info.solMask = 0;
-      dig_info.filtInputs = 0;
-      dig_info.mtrxInpMask = 0;
-      dig_info.solOutMask = 0;
-     
-      /* Set the location of the input configuration data */
-      gen2g_info.inpCfg_p = (GEN2G_INP_CFG_T *)gen2g_info.freeCfg_p;
-      gen2g_info.freeCfg_p += sizeof(GEN2G_INP_CFG_T);
+      *u32_p++ = 0;
+   }
 
-      /* Set up digital ports, walk through wing boards */
-      for (index = 0; index < RS232I_NUM_WING; index++)
+   for (INT solNum = 0; solNum < RS232I_NUM_GEN25_SOL; solNum++)
+   {
+      DIG_SOL_STATE_T *solState_p = &dig_info.solInfo[solNum].state;
+      if (solNum < RS232I_NUM_GEN2_SOL)
       {
-         /* Check if this wing board is a input driver */
-         if (gen2g_info.nvCfgInfo.wingCfg[index] == WING_INP)
+         solState_p->drvBit = 1 << (((solNum >> 2) << 3) + (solNum & 0x03) + 4);
+      }
+      else if (solNum < RS232I_NUM_PROC_PINS)
+      {
+         solState_p->drvBit = 1 << ((((solNum - RS232I_NUM_GEN2_SOL) >> 2) << 3) +
+            (solNum & 0x03));
+      }
+      solState_p->kickIntenMask = 0xffffffff;
+   }
+
+   /* Set up digital ports, walk through wing boards */
+   for (INT wingNum = 0; wingNum < RS232I_NUM_PROC_WINGS; wingNum++)
+   {
+      switch (gen2g_nv_cfg_p->wingCfg[wingNum])
+      {
+         case WING_UNUSED:
+         case WING_UNUSED2:
          {
-#if GEN2G_DEBUG_PORT == 0
-             /* Set up bit mask of valid inputs */
-        	 gen2g_info.inpMask |= (INPUT_BIT_MASK << (index << 3));
-#else
-             if ((index == 0) || (index == 2))
-             {
-            	 gen2g_info.inpMask |= (DBG_INPUT_BIT_MASK << (index << 3));
-             }
-             else
-             {
-            	 gen2g_info.inpMask |= (INPUT_BIT_MASK << (index << 3));
-             }
-#endif
-             /* Check if there are any servo outputs, since pins 8 to 16 are inputs,
-              *  they can be specially configured as servo outputs
-              */
-             if (index == 1)
-             {
-                 for (input = GEN2G_SERVO_FIRST_INDX;
-                    input < GEN2G_SERVO_FIRST_INDX + GEN2G_SERVO_NUM_INP_WING_SERVO; input++)
-                 {
-                	if (gen2g_info.inpCfg_p->inpCfg[input] >= SERVO_OUTPUT_THRESH)
-                	{
-                		gen2g_info.inpMask &= ~(1 << input);
-                		gen2g_info.servoMask |= (1 << (input - GEN2G_SERVO_FIRST_INDX));
-                		outputMask |= (1 << input);
-                	}
-                 }
-             }
+            break;
          }
-         /* Check if this wing board is a solenoid driver */
-         else if (gen2g_info.nvCfgInfo.wingCfg[index] == WING_SOL)
+         case WING_INP:
          {
-            foundSol = TRUE;
-            
-            outputMask |= (SOL_OUTP_BIT_MASK << (index << 3));
-            dig_info.solMask |= (SOL_MASK << (index << 2));
-            
-#if GEN2G_DEBUG_PORT == 0
             /* Set up bit mask of valid inputs */
-            gen2g_info.inpMask |= (SOL_INP_BIT_MASK << (index << 3));
-#else
-             if ((index == 0) || (index == 2))
-             {
-            	 gen2g_info.inpMask |= (DBG_SOL_INP_BIT_MASK << (index << 3));
-             }
-             else
-             {
-            	 gen2g_info.inpMask |= (SOL_INP_BIT_MASK << (index << 3));
-             }
-#endif
-             /* Check if there are any servo outputs, since pins 8 to 16 are inputs,
-              *  they can be specially configured as servo outputs
-              */
-             if (index == 1)
-             {
-                 for (input = GEN2G_SERVO_FIRST_INDX;
-                    input < GEN2G_SERVO_FIRST_INDX + GEN2G_SERVO_NUM_SOL_WING_SERVO; input++)
-                 {
-                	if (gen2g_info.inpCfg_p->inpCfg[input] >= SERVO_OUTPUT_THRESH)
-                	{
-                		gen2g_info.inpMask &= ~(1 << input);
-                		gen2g_info.servoMask |= (1 << (input - GEN2G_SERVO_FIRST_INDX));
-                		outputMask |= (1 << input);
-                	}
-                 }
-             }
-         }
-         /* Check if wing 2 is WING_SW_MATRIX_OUT, and wing 3 is WING_SW_MATRIX_IN.
-          *   Other positions are not allowed.
-          */
-         else if ((gen2g_info.nvCfgInfo.wingCfg[index] == WING_SW_MATRIX_OUT) ||
-            (gen2g_info.nvCfgInfo.wingCfg[index] == WING_SW_MATRIX_OUT_LOW))
-         {
-            if ((index == 2) && (gen2g_info.nvCfgInfo.wingCfg[3] == WING_SW_MATRIX_IN))
+            gen2g_info.inpMask[0] |= (ALL_PINS_BIT_MASK << (wingNum << 3));
+
+            /* Check if there are any servo outputs, since pins 8 to 15 are inputs,
+             *  they can be specially configured as servo outputs
+             */
+            if (wingNum == 1)
             {
-               dig_info.mtrxData.column = 0;
-               dig_info.mtrxData.waitCnt = 0;
-#if GEN2G_DEBUG_PORT == 0
-               outputMask |= MTRX_OUTPUT_BIT_MASK;
-#else
-               outputMask |= DBG_MTRX_OUT_BIT_MASK;
-#endif
-               dig_info.mtrxInpMask |= MTRX_INPUT_BIT_MASK;
-               if (gen2g_info.nvCfgInfo.wingCfg[index] == WING_SW_MATRIX_OUT)
+               for (INT input = GEN2G_SERVO_FIRST_INDX;
+                  input < GEN2G_SERVO_FIRST_INDX + GEN2G_SERVO_NUM_INP_WING_SERVO; input++)
                {
-            	   gen2g_info.switchMtrxActHigh = TRUE;
+                  if (dig_info.inpInfo[input].cfg >= SERVO_OUTPUT_THRESH)
+                  {
+                     gen2g_info.inpMask[0] &= ~(1 << input);
+                     gen2g_info.servoMask |= (1 << (input - GEN2G_SERVO_FIRST_INDX));
+                     outputMask |= (1 << input);
+                  }
+               }
+            }
+            break;
+         }
+         case WING_SOL:
+         {
+            outputMask |= (SOL_OUT_BIT_MASK << (wingNum << 3));
+            gen2g_info.solMask[0] |= (SOL_MASK << (wingNum << 2));
+
+            /* Set up bit mask of valid inputs */
+            gen2g_info.inpMask[0] |= (SOL_INP_BIT_MASK << (wingNum << 3));
+
+            /* Check if there are any servo outputs, since pins 8 to 16 are inputs,
+             *  they can be specially configured as servo outputs
+             */
+            if (wingNum == 1)
+            {
+               for (INT input = GEN2G_SERVO_FIRST_INDX;
+                  input < GEN2G_SERVO_FIRST_INDX + GEN2G_SERVO_NUM_SOL_WING_SERVO; input++)
+               {
+                  if (dig_info.inpInfo[input].cfg >= SERVO_OUTPUT_THRESH)
+                  {
+                     gen2g_info.inpMask[0] &= ~(1 << input);
+                     gen2g_info.servoMask |= (1 << (input - GEN2G_SERVO_FIRST_INDX));
+                     outputMask |= (1 << input);
+                  }
+               }
+            }
+            break;
+         }
+         case WING_SW_MATRIX_OUT:
+         case WING_SW_MATRIX_OUT_LOW:
+         {
+            if ((wingNum == 2) && (gen2g_nv_cfg_p->wingCfg[3] == WING_SW_MATRIX_IN))
+            {
+               outputMask |= MTRX_OUTPUT_BIT_MASK;
+               dig_info.mtrxInpMask |= MTRX_INPUT_BIT_MASK;
+               if (gen2g_nv_cfg_p->wingCfg[wingNum] == WING_SW_MATRIX_OUT)
+               {
+                  gen2g_info.switchMtrxActHigh = TRUE;
                }
             }
             else
             {
                gen2g_info.error = ERR_SW_MATRIX_WING_BAD_LOC;
             }
+            break;
          }
-         /* Neo wing can only be wing 0 */
-         else if (gen2g_info.nvCfgInfo.wingCfg[index] == WING_NEO)
+         case WING_SW_MATRIX_IN:
          {
-            if (index == 0)
+            if (wingNum != 3)
             {
-#if GEN2G_DEBUG_PORT == 0
-               gen2g_info.inpMask |= NEO_INP_BIT_MASK;
-#else
-               gen2g_info.inpMask |= DBG_NEO_INP_BIT_MASK;
-#endif
+               gen2g_info.error = ERR_SW_MATRIX_WING_BAD_LOC;
+            }
+            break;
+         }
+         case WING_NEO:
+         {
+            if (wingNum == 0)
+            {
+               gen2g_info.inpMask[0] |= NEO_INP_BIT_MASK;
                outputMask |= NEO_OUT_BIT_MASK;
-            }
-            else
-            {
-               gen2g_info.error = ERR_NEO_WING_BAD_LOC;
-            }
-         }
-         /* NeoSol wing can only be wing 0 */
-         else if (gen2g_info.nvCfgInfo.wingCfg[index] == WING_NEO_SOL)
-         {
-            if (index == 0)
-            {
-               foundSol = TRUE;
-               gen2g_info.inpMask |= NEO_SOL_INP_BIT_MASK;
-#if GEN2G_DEBUG_PORT == 0
-               dig_info.solMask |= SOL_MASK;
-               outputMask |= NEO_SOL_OUT_BIT_MASK;
-#else
-               dig_info.solMask |= DBG_NEO_SOL_MASK;
-               outputMask |= DBG_NEO_SOL_OUT_BIT_MASK;
-#endif
-               dig_info.solState[0].bit = 1;
-            }
-            else
-            {
-               gen2g_info.error = ERR_NEO_WING_BAD_LOC;
-            }
-         }
-         else if ((gen2g_info.nvCfgInfo.wingCfg[index] == WING_INCAND) ||
-            (gen2g_info.nvCfgInfo.wingCfg[index] == WING_HI_SIDE_INCAND) ||
-			(gen2g_info.nvCfgInfo.wingCfg[index] == WING_LAMP_MATRIX_COL) ||
-			(gen2g_info.nvCfgInfo.wingCfg[index] == WING_LAMP_MATRIX_ROW))
-         {
-            outputMask |= (INCAND_OUTP_MASK << (index << 3));
-#if GEN2G_DEBUG_PORT == 0
-            outputMask |= (INCAND_OUTP_MASK << (index << 3));
-#else
-            if ((index == 0) || (index == 2))
-            {
-               outputMask |= (DBG_INCAND_OUTP_MASK << (index << 3));
-            }
-            else
-            {
-               outputMask |= (INCAND_OUTP_MASK << (index << 3));
-            }
-#endif
-         }
-      }
-      for (index = 0; index < RS232I_NUM_GEN2_INP; index++)
-      {
-    	  usedBit = FALSE;
-    	  pinCfg.Pin = dig_pinInfo[index].GPIO_Pin;
-          if ((gen2g_info.inpMask & (1 << index)) != 0)
-          {
-        	  pinCfg.Mode = GPIO_MODE_INPUT;
-              pinCfg.Pull = GPIO_PULLUP;
-        	  usedBit = TRUE;
-          }
-          else if ((dig_info.mtrxInpMask & (1 << index)) != 0)
-          {
-        	  pinCfg.Mode = GPIO_MODE_INPUT;
-              if (gen2g_info.switchMtrxActHigh)
-              {
-                 pinCfg.Pull = GPIO_PULLDOWN;
-              }
-              else
-              {
-                 pinCfg.Pull = GPIO_PULLUP;
-              }
-        	  usedBit = TRUE;
-          }
-          else if ((outputMask & (1 << index)) != 0)
-          {
-              /* Check if servo output which uses alternate function */
-              pinCfg.Speed = GPIO_SPEED_FREQ_LOW;
-              if ((index >= GEN2G_SERVO_FIRST_INDX) &&
-                 (index < GEN2G_SERVO_FIRST_INDX + GEN2G_SERVO_NUM_INP_WING_SERVO) &&
-				 (gen2g_info.servoMask & 1 << (index - GEN2G_SERVO_FIRST_INDX)))
-              {
-                 pinCfg.Mode = GPIO_MODE_AF_PP;
-              }
-              else
-              {
-                 pinCfg.Mode = GPIO_MODE_OUTPUT_PP;
-              }
-        	  usedBit = TRUE;
-          }
-          if (usedBit)
-          {
-             HAL_GPIO_Init(dig_pinInfo[index].port_p, &pinCfg);
-          }
-      }
-      dig_info.filtInputs = stdldigio_read_all_ports(gen2g_info.inpMask | dig_info.mtrxInpMask);
 
-      /* Setup GPB2 as output for status (available on STM32F103CB boards) */
-      pinCfg.Pin = GPIO_PIN_2;
-      pinCfg.Mode = GPIO_MODE_OUTPUT_PP;
-      pinCfg.Speed = GPIO_SPEED_FREQ_LOW;
-      HAL_GPIO_Init(GPIOB, &pinCfg);
-      
-      /* Set the location of solenoid configuration data if it exists */
-      if (foundSol)
-      {
-         gen2g_info.solDrvCfg_p = (GEN2G_SOL_DRV_CFG_T *)gen2g_info.freeCfg_p;
-         gen2g_info.freeCfg_p += sizeof(GEN2G_SOL_DRV_CFG_T);
-      }
-      
-      /* Set up initial configuration of solenoids from NV config */
-      for (index = 0; index < RS232I_NUM_WING; index++)
-      {
-         if (gen2g_info.nvCfgInfo.wingCfg[index] == WING_SOL)
-         {
-            /* Configure the inputs for the solenoids */
-            for (inpCfg_p = &gen2g_info.inpCfg_p->inpCfg[index << 3];
-               inpCfg_p < &gen2g_info.inpCfg_p->inpCfg[(index << 3) + 8];
-               inpCfg_p++)
-            {
-               if (*inpCfg_p < SERVO_OUTPUT_THRESH)
+               // If Neo wing is configured for SPI LEDs clock is output
+               if ((gen2g_info.neoCfg.bytesPerPixel == 3) &&
+                  (gen2g_info.neoCfg.initColor[3] == 0xa5))
                {
-            	   *inpCfg_p = STATE_INPUT;
+                  gen2g_info.inpMask[0] &= ~NEO_SPI_CLK_BIT_MASK;
+                  outputMask |= NEO_SPI_CLK_BIT_MASK;
                }
             }
-         }
-      }
-
-      /* If a matrix wing exists, set up the solenoid inputs */
-      if ((gen2g_info.typeWingBrds & (1 << WING_SW_MATRIX_IN)) != 0)
-      {
-         /* Grab mtrxWaitCntThresh from config if set */
-         if (gen2g_info.inpCfg_p->inpCfg[RS232I_MTRX_WAIT_THRESH_INDX] == 0)
-         {
-            dig_info.mtrxData.mtrxWaitCntThresh = MATRIX_WAIT_CNT_THRESH;
-         }
-         else
-         {
-            dig_info.mtrxData.mtrxWaitCntThresh = gen2g_info.inpCfg_p->inpCfg[RS232I_MTRX_WAIT_THRESH_INDX];
-         }
-
-         /* Grab mtrxDebounceThresh from config if set */
-         if (gen2g_info.inpCfg_p->inpCfg[RS232I_MTRX_DEBOUNCE_THRESH_INDX] == 0)
-         {
-            dig_info.mtrxData.mtrxDebounceThresh = MATRIX_DEBOUNCE_THRESH;
-         }
-         else
-         {
-            dig_info.mtrxData.mtrxDebounceThresh = gen2g_info.inpCfg_p->inpCfg[RS232I_MTRX_DEBOUNCE_THRESH_INDX];
-         }
-
-
-         /* Initialize the counts and solenoid info */
-         for (index = 0; index < RS232I_SW_MATRX_INP; index++)
-         {
-            dig_info.mtrxData.info[index].cnt = 0;
-            dig_info.mtrxData.info[index].sol = 0;
-         }
-         /* Set up the solenoids to autofire using the switch matrix */
-         for (index = 0, solCfg_p = &gen2g_info.solDrvCfg_p->solCfg[0];
-            index < RS232I_NUM_GEN2_SOL; index++, solCfg_p++)
-         {
-            if (solCfg_p->cfg & USE_MATRIX_INP)
+            else
             {
-               dig_info.mtrxData.info[solCfg_p->minOffDuty].sol = MATRIX_FIRE_SOL | index;
+               gen2g_info.error = ERR_NEO_WING_BAD_LOC;
             }
+            break;
          }
-         /* Initialize matrix input for rs232 reports */
-         if (!gen2g_info.switchMtrxActHigh)
+         case WING_NEO_SOL:
          {
-            for (index = 0; index < RS232I_MATRX_COL; index++)
+            if (wingNum == 0)
             {
-               gen2g_info.matrixInp[index] = 0xff;
-            }
-         }
-      }
-      
-      /* Create solOutMask */
-      for (index = 0, solState_p = &dig_info.solState[0], currBit = 1;
-         index < RS232I_NUM_GEN2_SOL; index++, solState_p++, currBit <<= 1)
-      {
-         if ((dig_info.solMask & currBit) != 0)
-         {
-            dig_info.solOutMask |= solState_p->bit;
-         }
-      }
+               gen2g_info.inpMask[0] |= NEO_SOL_INP_BIT_MASK;
+               gen2g_info.solMask[0] |= SOL_MASK;
+               outputMask |= NEO_SOL_OUT_BIT_MASK;
+               dig_info.solInfo[0].state.drvBit = 1;
 
-      /* Set up the initial state */
-      digital_upd_sol_cfg((1 << RS232I_NUM_GEN2_SOL) - 1);
-      digital_upd_inp_cfg(gen2g_info.inpMask);
+               // If Neo wing is configured for SPI LEDs clock is output
+               if ((gen2g_info.neoCfg.bytesPerPixel == 3) &&
+                  (gen2g_info.neoCfg.initColor[3] == 0xa5))
+               {
+                  gen2g_info.inpMask[0] &= ~NEO_SPI_CLK_BIT_MASK;
+                  outputMask |= NEO_SPI_CLK_BIT_MASK;
+               }
+            }
+            else
+            {
+               gen2g_info.error = ERR_NEO_WING_BAD_LOC;
+            }
+            break;
+         }
+         case WING_SPI:
+         {
+            if (wingNum == 3)
+            {
+               gen2g_info.inpMask[0] |= SPI_INP_BIT_MASK;
+               outputMask |= SPI_OUT_BIT_MASK;
+            }
+            else
+            {
+               gen2g_info.error = ERR_SPI_WING_BAD_LOC;
+            }
+            break;
+         }
+         case WING_INCAND:
+         case WING_HI_SIDE_INCAND:
+         case WING_LAMP_MATRIX_COL:
+         case WING_LAMP_MATRIX_ROW:
+         {
+            outputMask |= (ALL_PINS_BIT_MASK << (wingNum << 3));
+            break;
+         }
+         case WING_MAX_SOL:
+         {
+            outputMask |= (MAX_SOL_MASK << (wingNum << 2));
+            gen2g_info.solMask[0] |= (MAX_SOL_MASK << (wingNum << 2));
+            break;
+         }
+         default:
+         {
+            gen2g_info.error = ERR_BAD_WING_TYPE;
+            break;
+         }
+      }
    }
+
+#if GEN2G_DEBUG_PORT != 0
+   /* Don't configure debug pins in debug mode */
+   gen2g_info.inpMask &= ~DBG_PIN_BIT_MASK;
+   outputMask &= ~DBG_PIN_BIT_MASK;
+   if (gen2g_nv_cfg_p->wingCfg[0] == WING_MAX_SOL)
+   {
+	  gen2g_info.solMask &= ~DBG_PIN_BIT_MASK;
+   }
+#endif
+
+   for (INT pinNum = 0; pinNum < RS232I_NUM_PROC_PINS; pinNum++)
+   {
+      usedBit = FALSE;
+      pinCfg.Pin = dig_pinInfo[pinNum].GPIO_Pin;
+      if ((gen2g_info.inpMask[0] & (1 << pinNum)) != 0)
+      {
+         pinCfg.Mode = GPIO_MODE_INPUT;
+         pinCfg.Pull = GPIO_PULLUP;
+         usedBit = TRUE;
+      }
+      else if ((dig_info.mtrxInpMask & (1 << pinNum)) != 0)
+      {
+         pinCfg.Mode = GPIO_MODE_INPUT;
+         if (gen2g_info.switchMtrxActHigh)
+         {
+            pinCfg.Pull = GPIO_PULLDOWN;
+         }
+         else
+         {
+            pinCfg.Pull = GPIO_PULLUP;
+         }
+         usedBit = TRUE;
+      }
+      else if ((outputMask & (1 << pinNum)) != 0)
+      {
+         /* Check if servo output which uses alternate function */
+         pinCfg.Speed = GPIO_SPEED_FREQ_LOW;
+         if ((pinNum >= GEN2G_SERVO_FIRST_INDX) &&
+            (pinNum < GEN2G_SERVO_FIRST_INDX + GEN2G_SERVO_NUM_INP_WING_SERVO) &&
+            (gen2g_info.servoMask & 1 << (pinNum - GEN2G_SERVO_FIRST_INDX)))
+         {
+            pinCfg.Mode = GPIO_MODE_AF_PP;
+         }
+         else
+         {
+            pinCfg.Mode = GPIO_MODE_OUTPUT_PP;
+         }
+         usedBit = TRUE;
+      }
+      if (usedBit)
+      {
+         HAL_GPIO_Init(dig_pinInfo[pinNum].port_p, &pinCfg);
+      }
+   }
+   dig_info.filtInputs = stdldigio_read_all_ports(gen2g_info.inpMask[0] | dig_info.mtrxInpMask);
+
+   /* Setup GPB2 as output for status (available on STM32F103CB boards) */
+   pinCfg.Pin = GPIO_PIN_2;
+   pinCfg.Mode = GPIO_MODE_OUTPUT_PP;
+   pinCfg.Speed = GPIO_SPEED_FREQ_LOW;
+   HAL_GPIO_Init(GPIOB, &pinCfg);
+
+   /* Previous code set all solenoid inputs to state inputs.  This should
+    * happen automatically without needing to do it.
+    */
+
+   /* If a matrix wing exists set up thresholds */
+   if ((gen2g_info.typeWingBrds & (1 << WING_SW_MATRIX_IN)) != 0)
+   {
+      /* Grab mtrxWaitCntThresh from config if set */
+      if (dig_info.inpInfo[RS232I_MTRX_WAIT_THRESH_INDX].cfg == 0)
+      {
+         dig_info.mtrxCfg.mtrxWaitCntThresh = MATRIX_WAIT_CNT_THRESH;
+      }
+      else
+      {
+         dig_info.mtrxCfg.mtrxWaitCntThresh = dig_info.inpInfo[RS232I_MTRX_WAIT_THRESH_INDX].cfg;
+      }
+
+      /* Grab mtrxDebounceThresh from config if set */
+      if (dig_info.inpInfo[RS232I_MTRX_DEBOUNCE_THRESH_INDX].cfg == 0)
+      {
+         dig_info.mtrxCfg.mtrxDebounceThresh = MATRIX_DEBOUNCE_THRESH;
+      }
+      else
+      {
+         dig_info.mtrxCfg.mtrxDebounceThresh = dig_info.inpInfo[RS232I_MTRX_DEBOUNCE_THRESH_INDX].cfg;
+      }
+
+      /* Initialize matrix input for rs232 reports */
+      if (!gen2g_info.switchMtrxActHigh)
+      {
+         for (INT col = 0; col < RS232I_MATRX_COL; col++)
+         {
+            gen2g_info.matrixInp[col] = 0xff;
+         }
+      }
+   }
+
+   /* Create solOutMask */
+   for (INT procSolNum = 0; procSolNum < RS232I_NUM_PROC_PINS; procSolNum++)
+   {
+      if ((gen2g_info.solMask[0] & (1 << procSolNum)) != 0)
+      {
+         dig_info.solOutMask |= dig_info.solInfo[procSolNum].state.drvBit;
+      }
+   }
+
+   /* Set up the initial state */
+   digital_upd_sol_cfg(RS232I_NUM_GEN25_SOL);
+   digital_upd_inp_cfg(RS232I_NUM_GEN25_INP);
 
 } /* End digital_init */
 
@@ -582,10 +569,9 @@ void digital_init(void)
  */
 void digital_task(void)
 {
-   DIG_INP_STATE_T            *inpState_p;
-   DIG_SOL_STATE_T            *solState_p;
-   RS232I_SOL_CFG_T           *solCfg_p;
-   DIG_MTRX_BIT_INFO_T        *matrixBitInfo_p;
+   DIG_INP_INFO_T             *inpInfo_p;
+   DIG_SOL_INFO_T             *solInfo_p;
+   DIG_MTRX_SPI_BIT_INFO_T    *matrixBitInfo_p;
    U32                        inputs = 0;
    U32                        changedBits;
    U32                        updFilterHi;
@@ -593,7 +579,6 @@ void digital_task(void)
    INT                        index;
    U8                         data;
    U8                         chngU8;
-   RS232I_CFG_INP_TYPE_E      cfg;
    U32                        currBit;
    INT                        elapsedTimeMs;
    U32                        currMsMask;
@@ -605,39 +590,38 @@ void digital_task(void)
    if (gen2g_info.validCfg)
    {
       /* Grab the inputs */
-      inputs = stdldigio_read_all_ports(gen2g_info.inpMask);
+      inputs = stdldigio_read_all_ports(gen2g_info.inpMask[0]);
       if ((gen2g_info.typeWingBrds & ((1 << WING_INP) | (1 << WING_SOL))) != 0)
       {
          /* See what bits have changed */
-         changedBits = (dig_info.prevInputs ^ inputs) & gen2g_info.inpMask;
+         changedBits = (dig_info.prevInputs ^ inputs) & gen2g_info.inpMask[0];
          updFilterHi = 0;
          updFilterLow = 0;
          
          /* Perform input processing for both input and solenoid boards */
-         for (index = 0, currBit = 1, inpState_p = &dig_info.inpState[0];
-            index < RS232I_NUM_GEN2_INP; index++, currBit <<= 1, inpState_p++)
+         for (index = 0, currBit = 1, inpInfo_p = &dig_info.inpInfo[0];
+            index < RS232I_NUM_GEN2_INP; index++, currBit <<= 1, inpInfo_p++)
          {
-            if (currBit & gen2g_info.inpMask)
+            if (currBit & gen2g_info.inpMask[0])
             {
                /* Check if this count has changed */
                if (changedBits & currBit)
                {
-                  inpState_p->cnt = 0;
+                  inpInfo_p->state.cnt = 0;
                }
                else
                {
-                  if (inpState_p->cnt <= SWITCH_THRESH)
+                  if (inpInfo_p->state.cnt <= SWITCH_THRESH)
                   {
-                     inpState_p->cnt++;
+                     inpInfo_p->state.cnt++;
                   }
-                  if (inpState_p->cnt == SWITCH_THRESH)
+                  if (inpInfo_p->state.cnt == SWITCH_THRESH)
                   {
-                     cfg = gen2g_info.inpCfg_p->inpCfg[index];
                      if (inputs & currBit)
                      {
                         updFilterHi |= currBit;
                         dig_info.filtInputs |= currBit;
-                        if (cfg == RISE_EDGE)
+                        if (inpInfo_p->cfg == RISE_EDGE)
                         {
                            DisableInterrupts;
                            gen2g_info.validSwitch |= currBit;
@@ -649,7 +633,7 @@ void digital_task(void)
                      {
                         updFilterLow |= currBit;
                         dig_info.filtInputs &= ~currBit;
-                        if (cfg == FALL_EDGE)
+                        if (inpInfo_p->cfg == FALL_EDGE)
                         {
                            DisableInterrupts;
                            gen2g_info.validSwitch |= currBit;
@@ -665,13 +649,13 @@ void digital_task(void)
 
       if ((gen2g_info.typeWingBrds & (1 << WING_SW_MATRIX_IN)) != 0)
       {
-         if (dig_info.mtrxData.waitCnt >= dig_info.mtrxData.mtrxWaitCntThresh)
+         if (dig_info.mtrxCfg.waitCnt >= dig_info.mtrxCfg.mtrxWaitCntThresh)
          {
-            dig_info.mtrxData.waitCnt = 0;
+            dig_info.mtrxCfg.waitCnt = 0;
     	    data = (U8)(stdldigio_read_all_ports(dig_info.mtrxInpMask) >> 24);
-            chngU8 = data ^ gen2g_info.matrixPrev[dig_info.mtrxData.column];
-            gen2g_info.matrixPrev[dig_info.mtrxData.column] = data;
-            matrixBitInfo_p = &dig_info.mtrxData.info[dig_info.mtrxData.column * 8];
+            chngU8 = data ^ gen2g_info.matrixPrev[dig_info.mtrxCfg.column];
+            gen2g_info.matrixPrev[dig_info.mtrxCfg.column] = data;
+            matrixBitInfo_p = &dig_info.mtrxSpi.info[dig_info.mtrxCfg.column * 8];
             for (index = 0, currBit = 1; index < 8; index++, currBit <<= 1, matrixBitInfo_p++)
             {
                /* If bit has changed, reset count */
@@ -681,12 +665,12 @@ void digital_task(void)
                }
                else
                {
-                  if (matrixBitInfo_p->cnt <= dig_info.mtrxData.mtrxDebounceThresh)
+                  if (matrixBitInfo_p->cnt <= dig_info.mtrxCfg.mtrxDebounceThresh)
                   {
                      matrixBitInfo_p->cnt++;
                   }
                   /* Just passed the threshold so update data bit */
-                  if (matrixBitInfo_p->cnt == dig_info.mtrxData.mtrxDebounceThresh)
+                  if (matrixBitInfo_p->cnt == dig_info.mtrxCfg.mtrxDebounceThresh)
                   {
                      if (((data & currBit) && gen2g_info.switchMtrxActHigh) ||
                        (((data & currBit) == 0) && !gen2g_info.switchMtrxActHigh))
@@ -694,11 +678,11 @@ void digital_task(void)
                         /* Set or clear bit depending if active high or low */
                         if (gen2g_info.switchMtrxActHigh)
                         {
-                           gen2g_info.matrixInp[dig_info.mtrxData.column] |= currBit;
+                           gen2g_info.matrixInp[dig_info.mtrxCfg.column] |= currBit;
                         }
                         else
                         {
-                           gen2g_info.matrixInp[dig_info.mtrxData.column] &= ~currBit;
+                           gen2g_info.matrixInp[dig_info.mtrxCfg.column] &= ~currBit;
                         }
                         if (matrixBitInfo_p->sol != 0)
                         {
@@ -711,13 +695,13 @@ void digital_task(void)
             }
          }
 
-         if (dig_info.mtrxData.waitCnt == 0)
+         if (dig_info.mtrxCfg.waitCnt == 0)
          {
             /* Move to next column */
-            dig_info.mtrxData.column++;
-            if (dig_info.mtrxData.column >= RS232I_MATRX_COL)
+            dig_info.mtrxCfg.column++;
+            if (dig_info.mtrxCfg.column >= RS232I_MATRX_COL)
             {
-               dig_info.mtrxData.column = 0;
+               dig_info.mtrxCfg.column = 0;
             }
          
 #if GEN2G_DEBUG_PORT == 0
@@ -728,15 +712,15 @@ void digital_task(void)
             /* Reverse column numbering to match Bally documentation */
             if (gen2g_info.switchMtrxActHigh)
             {
-               dig_info.outputUpd |= (1 << (MATRIX_COL_OFFS + RS232I_MATRX_COL - 1 - dig_info.mtrxData.column));
+               dig_info.outputUpd |= (1 << (MATRIX_COL_OFFS + RS232I_MATRX_COL - 1 - dig_info.mtrxCfg.column));
             }
             else
             {
-               dig_info.outputUpd |= ((~(1 << (MATRIX_COL_OFFS + RS232I_MATRX_COL - 1 - dig_info.mtrxData.column))) &
+               dig_info.outputUpd |= ((~(1 << (MATRIX_COL_OFFS + RS232I_MATRX_COL - 1 - dig_info.mtrxCfg.column))) &
                   MATRIX_COL_MASK);
             }
          }
-         dig_info.mtrxData.waitCnt++;
+         dig_info.mtrxCfg.waitCnt++;
       }
       
       if ((gen2g_info.typeWingBrds & (1 << WING_SOL)) != 0)
@@ -750,171 +734,172 @@ void digital_task(void)
 
          /* Update sol output bits every time */
          dig_info.outputMask |= dig_info.solOutMask;
-         for (index = 0, currBit = 1, solState_p = &dig_info.solState[0],
-            solCfg_p = &gen2g_info.solDrvCfg_p->solCfg[0];
-            index < RS232I_NUM_GEN2_SOL; index++, currBit <<= 1, solState_p++, solCfg_p++)
+         for (index = 0, currBit = 1, solInfo_p = &dig_info.solInfo[0];
+            index < RS232I_NUM_GEN2_SOL; index++, currBit <<= 1, solInfo_p++)
          {
             /* Check if processor is requesting a kick, or an input changed */
-            if ((solState_p->solState == SOL_STATE_IDLE) &&
+            if ((solInfo_p->state.solState == SOL_STATE_IDLE) &&
                ((gen2g_info.solDrvProcCtl & currBit) ||
-               (updFilterLow & solState_p->inpBits)))
+               (updFilterLow & solInfo_p->state.inpBits)))
             {
                /* Check if processor is kicking normal solenoid */
-               if ((solCfg_p->cfg & (ON_OFF_SOL | DLY_KICK_SOL)) == 0)
+               if ((solInfo_p->cfg.cfg & (ON_OFF_SOL | DLY_KICK_SOL)) == 0)
                {
                   /* Start the solenoid kick */
-                  solState_p->solState = SOL_INITIAL_KICK;
-                  solState_p->startMs = timer_get_ms_count();
-                  dig_info.outputUpd |= solState_p->bit;
+                  solInfo_p->state.solState = SOL_INITIAL_KICK;
+                  solInfo_p->state.startMs = timer_get_ms_count();
+                  dig_info.outputUpd |= solInfo_p->state.drvBit;
                }
-               else if ((solCfg_p->cfg & ON_OFF_SOL) != 0)
+               else if ((solInfo_p->cfg.cfg & ON_OFF_SOL) != 0)
                {
-                  solState_p->solState = SOL_FULL_ON_SOLENOID;
-                  dig_info.outputUpd |= solState_p->bit;
+            	   solInfo_p->state.solState = SOL_FULL_ON_SOLENOID;
+                  dig_info.outputUpd |= solInfo_p->state.drvBit;
                }
-               else if ((solCfg_p->cfg & DLY_KICK_SOL) != 0)
+               else if ((solInfo_p->cfg.cfg & DLY_KICK_SOL) != 0)
                {
-                  solState_p->solState = SOL_WAIT_BEFORE_KICK;
-                  solState_p->startMs = timer_get_ms_count();
+                  solInfo_p->state.solState = SOL_WAIT_BEFORE_KICK;
+                  solInfo_p->state.startMs = timer_get_ms_count();
                }
-               if ((solCfg_p->cfg & AUTO_CLR) &&
+               if ((solInfo_p->cfg.cfg & AUTO_CLR) &&
                   (gen2g_info.solDrvProcCtl & currBit))
                {
                   gen2g_info.solDrvProcCtl &= ~currBit;
-                  solState_p->clearRcvd = TRUE;
+                  solInfo_p->state.clearRcvd = TRUE;
                }
                else
                {
-                  solState_p->clearRcvd = FALSE;
+                  solInfo_p->state.clearRcvd = FALSE;
                }
             }
-            else if (solState_p->solState == SOL_INITIAL_KICK)
+            else if (solInfo_p->state.solState == SOL_INITIAL_KICK)
             {
-               if ((solCfg_p->cfg & CAN_CANCEL) != 0)
+               if ((solInfo_p->cfg.cfg & CAN_CANCEL) != 0)
                {
                   if (((gen2g_info.solDrvProcCtl & currBit) == 0) &&
-                     ((solState_p->inpBits == 0) ||
-                     ((solState_p->inpBits & inputs) == solState_p->inpBits)))
+                     ((solInfo_p->state.inpBits == 0) ||
+                     ((solInfo_p->state.inpBits & inputs) == solInfo_p->state.inpBits)))
                   {
                      /* Switch is inactive, move to idle */
-                     solState_p->solState = SOL_STATE_IDLE;
+                     solInfo_p->state.solState = SOL_STATE_IDLE;
                   }
                }
             
-               if (solState_p->solState == SOL_INITIAL_KICK)
+               if (solInfo_p->state.solState == SOL_INITIAL_KICK)
                {
                   /* Check if elapsed time is over initial kick time */
-                  elapsedTimeMs = timer_get_ms_count() - solState_p->startMs;
-                  if (elapsedTimeMs >= solCfg_p->initKick)
+                  elapsedTimeMs = timer_get_ms_count() - solInfo_p->state.startMs;
+                  if (elapsedTimeMs >= solInfo_p->cfg.initKick)
                   {
                      /* If this is a normal solenoid */
-                     if ((solCfg_p->cfg & (ON_OFF_SOL | DLY_KICK_SOL | USE_MATRIX_INP)) == 0)
+                     if ((solInfo_p->cfg.cfg & (ON_OFF_SOL | DLY_KICK_SOL | USE_MATRIX_INP)) == 0)
                      {
                         /* See if this has a sustaining PWM */
-                        if (solCfg_p->minOffDuty & DUTY_CYCLE_MASK)
+                        if (solInfo_p->cfg.minOffDuty & DUTY_CYCLE_MASK)
                         {
                            /* Make sure the input continues to be set */
-                           if (solState_p->clearRcvd)
+                           if (solInfo_p->state.clearRcvd)
                            {
-                              solState_p->solState = SOL_MIN_TIME_OFF;
-                              solState_p->offCnt = 0;
+                              solInfo_p->state.solState = SOL_MIN_TIME_OFF;
+                              solInfo_p->state.offCnt = 0;
                            }
                            else
                            {
                               /* Grab holdIntenMask */
-                              solState_p->solState = SOL_SUSTAIN_PWM;
-                              solState_p->holdIntenMask =
-                                 PWM_MASK[(((solCfg_p->minOffDuty & DUTY_CYCLE_MASK) - 1) * 2) + 1];
-                              if (currMsMask & solState_p->holdIntenMask)
+                              solInfo_p->state.solState = SOL_SUSTAIN_PWM;
+                              solInfo_p->state.holdIntenMask =
+                                 PWM_MASK[(((solInfo_p->cfg.minOffDuty & DUTY_CYCLE_MASK) - 1) * 2) + 1 -
+								   ((solInfo_p->cfg.minOffDuty & DUTY_CYCLE_MSb) >> 7)];
+                              if (currMsMask & solInfo_p->state.holdIntenMask)
                               {
-                                 dig_info.outputUpd |= solState_p->bit;
+                                 dig_info.outputUpd |= solInfo_p->state.drvBit;
                               }
                            }
                         }
                         else
                         {
-                           solState_p->solState = SOL_MIN_TIME_OFF;
-                           solState_p->offCnt = 0;
+                           solInfo_p->state.solState = SOL_MIN_TIME_OFF;
+                           solInfo_p->state.offCnt = 0;
                         }
                      }
-                     else if ((solCfg_p->cfg & (DLY_KICK_SOL | USE_MATRIX_INP)) != 0)
+                     else if ((solInfo_p->cfg.cfg & (DLY_KICK_SOL | USE_MATRIX_INP)) != 0)
                      {
-                        solState_p->solState = SOL_MIN_TIME_OFF;
-                        solState_p->offCnt = 0;
+                        solInfo_p->state.solState = SOL_MIN_TIME_OFF;
+                        solInfo_p->state.offCnt = 0;
                      }
-                     solState_p->startMs = timer_get_ms_count();
+                     solInfo_p->state.startMs = timer_get_ms_count();
                   }
-                  else if (currMsMask & solState_p->kickIntenMask)
+                  else if (currMsMask & solInfo_p->state.kickIntenMask)
                   {
-                     dig_info.outputUpd |= solState_p->bit;
+                     dig_info.outputUpd |= solInfo_p->state.drvBit;
                   }
                }
             }
-            else if (solState_p->solState == SOL_SUSTAIN_PWM)
+            else if (solInfo_p->state.solState == SOL_SUSTAIN_PWM)
             {
                if (((gen2g_info.solDrvProcCtl & currBit) == 0) &&
-			     ((solState_p->inpBits == 0) ||
-                 ((solState_p->inpBits & inputs) == solState_p->inpBits)))
+			     ((solInfo_p->state.inpBits == 0) ||
+                 ((solInfo_p->state.inpBits & inputs) == solInfo_p->state.inpBits)))
                {
-                  solState_p->clearRcvd = TRUE;
+                  solInfo_p->state.clearRcvd = TRUE;
                }
-               if (!solState_p->clearRcvd)
+               if (!solInfo_p->state.clearRcvd)
                {
                   /* Do faster PWM function by testing us timer */
-                  if (currMsMask & solState_p->holdIntenMask)
+                  if (currMsMask & solInfo_p->state.holdIntenMask)
                   {
-                     dig_info.outputUpd |= solState_p->bit;
+                     dig_info.outputUpd |= solInfo_p->state.drvBit;
                   }
                }
                else
                {
                   /* Switch is inactive, move to idle */
-                  solState_p->solState = SOL_STATE_IDLE;
+                  solInfo_p->state.solState = SOL_STATE_IDLE;
                }
             }
-            else if (solState_p->solState == SOL_MIN_TIME_OFF)
+            else if (solInfo_p->state.solState == SOL_MIN_TIME_OFF)
             {
                /* Check if an off time increment has happened */
-               elapsedTimeMs = timer_get_ms_count() - solState_p->startMs;
-               if (elapsedTimeMs >= solCfg_p->initKick)
+               elapsedTimeMs = timer_get_ms_count() - solInfo_p->state.startMs;
+               if (elapsedTimeMs >= solInfo_p->cfg.initKick)
                {
-                  solState_p->offCnt += MIN_OFF_INC;
-                  if (solState_p->offCnt >= (solCfg_p->minOffDuty & MIN_OFF_MASK))
+                  solInfo_p->state.offCnt += MIN_OFF_INC;
+                  if (solInfo_p->state.offCnt >= (solInfo_p->cfg.minOffDuty & MIN_OFF_MASK))
                   {
-                     solState_p->solState = SOL_STATE_IDLE;
+                     solInfo_p->state.solState = SOL_STATE_IDLE;
                   }
                   else
                   {
-                     solState_p->startMs = timer_get_ms_count();
+                     solInfo_p->state.startMs = timer_get_ms_count();
                   }
                }
             }
-            else if (solState_p->solState == SOL_WAIT_BEFORE_KICK)
+            else if (solInfo_p->state.solState == SOL_WAIT_BEFORE_KICK)
             {
                /* Check if elapsed time is over the wait time
                 * (stored in duty cycle nibble * 2)
                 */
-               elapsedTimeMs = timer_get_ms_count() - solState_p->startMs;
-               if (elapsedTimeMs >= ((solCfg_p->minOffDuty & DUTY_CYCLE_MASK) << 1))
+               elapsedTimeMs = timer_get_ms_count() - solInfo_p->state.startMs;
+               if (elapsedTimeMs >= ((solInfo_p->cfg.minOffDuty & DUTY_CYCLE_MASK) << 1) +
+                  ((solInfo_p->cfg.minOffDuty & DUTY_CYCLE_MSb) >> 2))
                {
                   /* Start the solenoid kick */
-                  solState_p->solState = SOL_INITIAL_KICK;
-                  solState_p->startMs = timer_get_ms_count();
-                  dig_info.outputUpd |= solState_p->bit;
+                  solInfo_p->state.solState = SOL_INITIAL_KICK;
+                  solInfo_p->state.startMs = timer_get_ms_count();
+                  dig_info.outputUpd |= solInfo_p->state.drvBit;
                }
             }
-            else if (solState_p->solState == SOL_FULL_ON_SOLENOID)
+            else if (solInfo_p->state.solState == SOL_FULL_ON_SOLENOID)
             {
                if (((gen2g_info.solDrvProcCtl & currBit) == 0) &&
-			     ((solState_p->inpBits == 0) ||
-                 ((solState_p->inpBits & inputs) == solState_p->inpBits)))
+			     ((solInfo_p->state.inpBits == 0) ||
+                 ((solInfo_p->state.inpBits & inputs) == solInfo_p->state.inpBits)))
                {
                   /* Switch is inactive, move to idle */
-                  solState_p->solState = SOL_STATE_IDLE;
+                  solInfo_p->state.solState = SOL_STATE_IDLE;
                }
-               else if (currMsMask & solState_p->kickIntenMask)
+               else if (currMsMask & solInfo_p->state.kickIntenMask)
                {
-                  dig_info.outputUpd |= solState_p->bit;
+                  dig_info.outputUpd |= solInfo_p->state.drvBit;
                }
             }
          }
@@ -961,7 +946,7 @@ void digital_set_solenoid_input(
    
    if (inpIndex < RS232I_NUM_GEN2_INP)
    {
-      solState_p = &dig_info.solState[solIndex & SOL_INP_SOL_MASK];
+      solState_p = &dig_info.solInfo[solIndex & SOL_INP_SOL_MASK].state;
       if ((solIndex & SOL_INP_CLEAR_SOL) == 0)
       {
          solState_p->inpBits |= (1 << inpIndex);
@@ -971,20 +956,21 @@ void digital_set_solenoid_input(
          solState_p->inpBits &= ~(1 << inpIndex);
       }
    }
-   else if ((inpIndex - RS232I_NUM_GEN2_INP) < RS232I_SW_MATRX_INP)
+   else if ((inpIndex - RS232I_NUM_GEN2_INP) < RS232I_NUM_SW_MATRX_SPI_INP)
    {
-      /* Inputs 32 to 96 are from the switch matrix, first verify
-       * there is a switch matrix.
+      /* Inputs 32 to 96 are from the switch matrix or SPI, first verify
+       * there is a switch matrix or SPI.
        */
-      if ((gen2g_info.typeWingBrds & (1 << WING_SW_MATRIX_IN)) != 0)
+      if (((gen2g_info.typeWingBrds & (1 << WING_SW_MATRIX_IN)) != 0) ||
+         ((gen2g_info.typeWingBrds & (1 << WING_SPI)) != 0))
       {
          if (solIndex & SOL_INP_CLEAR_SOL)
          {
-            dig_info.mtrxData.info[inpIndex - RS232I_NUM_GEN2_INP].sol = 0;
+            dig_info.mtrxSpi.info[inpIndex - RS232I_NUM_GEN2_INP].sol = 0;
          }
          else
          {
-            dig_info.mtrxData.info[inpIndex - RS232I_NUM_GEN2_INP].sol =
+            dig_info.mtrxSpi.info[inpIndex - RS232I_NUM_GEN2_INP].sol =
                MATRIX_FIRE_SOL | (solIndex & SOL_INP_SOL_MASK);
          }
       }
@@ -1018,9 +1004,72 @@ void digital_set_kick_pwm(
 {
    if (solIndex < RS232I_NUM_GEN2_SOL)
    {
-      dig_info.solState[solIndex].kickIntenMask = PWM_MASK[kickPwm & 0x1f];
+      dig_info.solInfo[solIndex].state.kickIntenMask = PWM_MASK[kickPwm & 0x1f];
    }
 } /* End digital_set_kick_pwm */
+
+/*
+ * ===============================================================================
+ *
+ * Name: digital_upd_ind_sol_cfg
+ *
+ * ===============================================================================
+ */
+/**
+ * Update individual solenoid configuration
+ *
+ * Update a solenoid configuration.
+ *
+ * @param   solNum - Number of solenoid to be updated
+ * @return  None
+ *
+ * @pre     None
+ * @note    None
+ *
+ * ===============================================================================
+ */
+void digital_upd_ind_sol_cfg(
+   U32                        solNum)
+{
+   INT                        solGrp = solNum >> 5;
+   INT                        solBit = 1 << (solNum & 0x1f);
+
+   if (gen2g_info.solMask[solGrp] & solBit)
+   {
+      DIG_SOL_INFO_T *solInfo_p = &dig_info.solInfo[solNum];
+      solInfo_p->state.solState = SOL_STATE_IDLE;
+      if (solNum < RS232I_NUM_GEN2_SOL)
+      {
+         U32 inputIndex = ((solNum & 0x0c) << 1) + (solNum & 0x03);
+         U32 inputBit = 1 << inputIndex;
+         if (solInfo_p->cfg.cfg & USE_SWITCH)
+         {
+            if (gen2g_info.inpMask[solGrp] & inputBit)
+            {
+               solInfo_p->state.inpBits |= inputBit;
+               dig_info.inpInfo[solNum].state.cnt = 0;
+            }
+         }
+         else
+         {
+            solInfo_p->state.inpBits &= ~inputBit;
+         }
+      }
+      else if (solGrp > 0)
+      {
+         if (solInfo_p->cfg.cfg & USE_SWITCH)
+         {
+            /* SPI solenoids use same input bit as output bit */
+            dig_info.mtrxSpi.info[solNum].sol = MATRIX_FIRE_SOL | solNum;
+         }
+         else if (solInfo_p->cfg.cfg & USE_MATRIX_INP)
+         {
+            /* SPI can be configured for using other matrix bits */
+            dig_info.mtrxSpi.info[solInfo_p->cfg.minOffDuty].sol = MATRIX_FIRE_SOL | solNum;
+         }
+      }
+   }
+} /* End digital_upd_ind_sol_cfg */
 
 /*
  * ===============================================================================
@@ -1030,11 +1079,11 @@ void digital_set_kick_pwm(
  * ===============================================================================
  */
 /**
- * Update solenoid configuration
+ * Update solenoid configurations
  *
- * Update a solenoid configuration.
+ * Update solenoid configurations.
  * 
- * @param   updMask - Mask of solenoids to be updated. 
+ * @param   numSol - Number of solenoids to be updated.
  * @return  None
  * 
  * @pre     None 
@@ -1043,60 +1092,121 @@ void digital_set_kick_pwm(
  * ===============================================================================
  */
 void digital_upd_sol_cfg(
-   U16                        updMask)
+   U32                        numSol)
 {
-   INT                        index;
-   INT                        currBit;
-   DIG_SOL_STATE_T            *solState_p;
-   RS232I_SOL_CFG_T           *solDrvCfg_p;
-   DIG_INP_STATE_T            *inpState_p;
-   U32                        inputBit;
-   
-   /* Clear the solenoid state machines */
-   updMask &= dig_info.solMask;
-   for (index = 0, solState_p = &dig_info.solState[0], currBit = 1;
-      index < RS232I_NUM_GEN2_SOL; index++, solState_p++, currBit <<= 1)
+   for (U32 solNum = 0; solNum < numSol; solNum++)
    {
-      if ((updMask & currBit) != 0)
-      {
-         solState_p->solState = SOL_STATE_IDLE;
-         solDrvCfg_p = &gen2g_info.solDrvCfg_p->solCfg[index];
-         if (solDrvCfg_p->cfg & USE_SWITCH)
-         {
-            inpState_p = &dig_info.inpState[((index & 0x0c) << 1) + (index & 0x03)];
-            inpState_p->cnt = 0;
-
-            /* Don't set certain input bits for NeoSol and SPI clock if configured */
-            if ((currBit & gen2g_info.disSolInp) == 0)
-            {
-               inputBit = (1 << (((index & 0x0c) << 1) + (index & 0x03)));
-               if (inputBit & gen2g_info.inpMask)
-               {
-                  solState_p->inpBits |= inputBit;
-               }
-            }
-         }
-         else
-         {
-            solState_p->inpBits &= ~(1 << (((index & 0x0c) << 1) + (index & 0x03)));
-         }
-      }
+      digital_upd_ind_sol_cfg(solNum);
    }
 } /* End digital_upd_sol_cfg */
 
 /*
  * ===============================================================================
  * 
+ * Name: digital_upd_ind_inp_cfg
+ *
+ * ===============================================================================
+ */
+/**
+ * Update individual input configuration
+ *
+ * Update an input configuration.
+ *
+ * @param   inpNum - Number of input to be updated
+ * @return  None
+ *
+ * @pre     None
+ * @note    None
+ *
+ * ===============================================================================
+ */
+void digital_upd_ind_inp_cfg(
+   U32                        inpNum)
+{
+   INT                        inpGrp = inpNum >> 5;
+   INT                        inpBit = 1 << (inpNum & 0x1f);
+
+   if (gen2g_info.inpMask[inpGrp] & inpBit)
+   {
+      DIG_INP_INFO_T *inpInfo_p = &dig_info.inpInfo[inpNum];
+      inpInfo_p->state.cnt = 0;
+      if ((inpInfo_p->cfg < SERVO_OUTPUT_THRESH) && (inpGrp == 0))
+      {
+         if (inpInfo_p->cfg == STATE_INPUT)
+         {
+            dig_info.stateMask |= inpBit;
+         }
+         else
+         {
+            dig_info.stateMask &= ~inpBit;
+         }
+      }
+   }
+} /* End digital_upd_ind_inp_cfg */
+
+/*
+ * ===============================================================================
+ *
+ * Name: digital_set_inp_cfg
+ *
+ * ===============================================================================
+ */
+/**
+ * Set an input configuration
+ *
+ * @param   inpNum - Number of input to be updated
+ * @param   inpCfg - Input configuration
+ * @return  None
+ *
+ * @pre     None
+ * @note    None
+ *
+ * ===============================================================================
+ */
+void digital_set_inp_cfg(
+   U32                        inpNum,
+   RS232I_CFG_INP_TYPE_E      inpCfg)
+{
+   dig_info.inpInfo[inpNum].cfg = inpCfg;
+} /* End digital_set_inp_cfg */
+
+/*
+ * ===============================================================================
+ *
+ * Name: digital_get_inp_cfg
+ *
+ * ===============================================================================
+ */
+/**
+ * Get an input configuration
+ *
+ * @param   inpNum - Number of input to be updated
+ * @return  None
+ *
+ * @pre     None
+ * @note    None
+ *
+ * ===============================================================================
+ */
+RS232I_CFG_INP_TYPE_E digital_get_inp_cfg(
+   U32                        inpNum)
+{
+   return(dig_info.inpInfo[inpNum].cfg);
+} /* End digital_get_inp_cfg */
+
+/*
+ * ===============================================================================
+ *
  * Name: digital_upd_inp_cfg
  * 
  * ===============================================================================
  */
 /**
- * Update input configuration
+ * Update input configurations
  *
- * Update an input configuration.
+ * Update input configurations.
  * 
- * @param   updMask - Mask of inputs to be updated. 
+ * @param   numInp - Number of inputs to be updated.
  * @return  None
  * 
  * @pre     None 
@@ -1105,34 +1215,11 @@ void digital_upd_sol_cfg(
  * ===============================================================================
  */
 void digital_upd_inp_cfg(
-   U32                        updMask)
+   U32                        numInp)
 {
-   INT                        index;
-   INT                        currBit;
-   DIG_INP_STATE_T            *inpState_p;
-   RS232I_CFG_INP_TYPE_E      *inpCfg_p;
-   
-   /* Clear the input counts */
-   for (index = 0, inpState_p = &dig_info.inpState[0],
-      inpCfg_p = &gen2g_info.inpCfg_p->inpCfg[0], currBit = 1;
-      index < RS232I_NUM_GEN2_INP;
-      index++, inpState_p++, inpCfg_p++, currBit <<= 1)
+   for (U32 inpNum = 0; inpNum < numInp; inpNum++)
    {
-      if ((updMask & currBit) != 0)
-      {
-         inpState_p->cnt = 0;
-         if (*inpCfg_p < SERVO_OUTPUT_THRESH)
-         {
-             if (*inpCfg_p == STATE_INPUT)
-             {
-                dig_info.stateMask |= currBit;
-             }
-             else
-             {
-                dig_info.stateMask &= ~currBit;
-             }
-         }
-      }
+      digital_upd_ind_inp_cfg(inpNum);
    }
 } /* End digital_upd_inp_cfg */
 
@@ -1192,3 +1279,139 @@ void digital_write_outputs()
    dig_info.outputUpd = 0;
    dig_info.outputMask = 0;
 } /* End digital_write_outputs */
+
+/*
+ * ===============================================================================
+ *
+ * Name: digital_convert_v0_sol_cfg_to_v1_solcfg
+ *
+ * ===============================================================================
+ */
+/**
+ * Convert version 0 solenoid config to version 1 solenoid config
+ *
+ * Convert to the newer version of the solenoid config.  Copy to current RAM cfg.
+ *
+ * @param   None
+ * @param   None
+ * @return  None
+ *
+ * @pre     None
+ * @note    None
+ *
+ * ===============================================================================
+ */
+void digital_convert_v0_sol_cfg_to_v1_solcfg(
+   INT                        solIndex,
+   RS232I_SOL_CFG_T           *cfg_p)
+{
+   dig_info.solInfo[solIndex].cfg.cfg = cfg_p->cfg;
+   dig_info.solInfo[solIndex].cfg.initKick = cfg_p->initKick;
+   dig_info.solInfo[solIndex].cfg.minOffDuty = cfg_p->minOffDuty;
+   if (cfg_p->cfg & DLY_KICK_SOL)
+   {
+      dig_info.solInfo[solIndex].cfg.delayMs = ((cfg_p->minOffDuty & DUTY_CYCLE_MASK) << 1) +
+         ((cfg_p->minOffDuty & DUTY_CYCLE_MSb) >> 2);
+   }
+} /* End digital_convert_v0_sol_cfg_to_v1_solcfg */
+
+/*
+ * ===============================================================================
+ *
+ * Name: digital_convert_v0_cfg_to_v1_cfg
+ *
+ * ===============================================================================
+ */
+/**
+ * Convert version 0 config to version 1 config
+ *
+ * Convert to the newer version of the config.  Copy to current RAM cfg.
+ *
+ * @param   None
+ * @param   None
+ * @return  None
+ *
+ * @pre     None
+ * @note    None
+ *
+ * ===============================================================================
+ */
+U8 *digital_convert_v0_cfg_to_v1_cfg()
+{
+   BOOL                       hasSol = FALSE;
+   BOOL                       hasNeo = FALSE;
+   U8                         *cfg_p = GEN2G_V0_CFG_DATA_ADDR;
+
+   // Copy input configs
+   for (INT inpIndex = 0; inpIndex < RS232I_NUM_GEN2_INP; inpIndex++)
+   {
+	   dig_info.inpInfo[inpIndex].cfg = *(RS232I_CFG_INP_TYPE_E *)cfg_p++;
+   }
+   for (INT wingIndex = 0; wingIndex < RS232I_NUM_PROC_WINGS; wingIndex++)
+   {
+      if ((gen2g_nv_cfg_p->wingCfg[wingIndex] == WING_SOL) ||
+         (gen2g_nv_cfg_p->wingCfg[wingIndex] == WING_NEO_SOL))
+      {
+         hasSol = TRUE;
+      }
+      if ((gen2g_nv_cfg_p->wingCfg[wingIndex] == WING_NEO) ||
+         (gen2g_nv_cfg_p->wingCfg[wingIndex] == WING_NEO_SOL))
+      {
+         hasNeo = TRUE;
+      }
+   }
+   if (hasSol)
+   {
+      for (INT solIndex = 0; solIndex < RS232I_NUM_GEN2_SOL; solIndex++)
+      {
+         digital_convert_v0_sol_cfg_to_v1_solcfg(solIndex, (RS232I_SOL_CFG_T *)cfg_p);
+         cfg_p += sizeof(RS232I_SOL_CFG_T);
+      }
+   }
+   if (hasNeo)
+   {
+      for (INT index = 0; index < sizeof(GEN2G_NEO_CFG_T); index++)
+      {
+         ((U8 *)&gen2g_info.neoCfg)[index] = *cfg_p++;
+      }
+   }
+   return (cfg_p);
+} /* End digital_convert_v0_cfg_to_v1_cfg */
+
+/*
+ * ===============================================================================
+ *
+ * Name: digital_copy_v1_cfg
+ *
+ * ===============================================================================
+ */
+/**
+ * Copy version 1 config RAM
+ *
+ * Copy from FLASH to the active configuration in RAM
+ *
+ * @param   None
+ * @param   None
+ * @return  None
+ *
+ * @pre     None
+ * @note    None
+ *
+ * ===============================================================================
+ */
+void digital_copy_v1_cfg()
+{
+   // Copy input configs
+   RS232I_CFG_INP_TYPE_E *inpCfg_p = GEN2G_V1_INP_CFG_ADDR;
+   for (INT inpIndex = 0; inpIndex < RS232I_NUM_GEN25_INP; inpIndex++)
+   {
+	   dig_info.inpInfo[inpIndex].cfg = *inpCfg_p++;
+   }
+
+   // Copy sol configs
+   RS232I_SOL25_CFG_T *solCfg_p = GEN2G_V1_SOL_CFG_ADDR;
+   for (INT solIndex = 0; solIndex < RS232I_NUM_GEN25_SOL; solIndex++)
+   {
+      *(U32 *)&dig_info.solInfo[solIndex] = *(U32 *)solCfg_p++;
+   }
+} /* End digital_copy_v1_cfg */

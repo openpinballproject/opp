@@ -62,13 +62,21 @@ typedef enum
    ERR_MALLOC_FAIL            = 0x01,
    ERR_SW_MATRIX_WING_BAD_LOC = 0x02,
    ERR_NEO_WING_BAD_LOC       = 0x03,
+   ERR_SPI_WING_BAD_LOC       = 0x04,
+   ERR_BAD_WING_TYPE          = 0x05,
 } __attribute__((packed)) GEN2G_ERROR_E;
 
 #define GEN2G_APP_FLASH_ADDR  0x08001000
 #define GEN2G_CFG_TBL         0x0800fc00
 #define GEN2G_PERSIST_TBL     0x0800fff0
+
+#define GEN2G_V0_CFG_DATA_ADDR  (U8 *)(GEN2G_CFG_TBL + sizeof(GEN2G_NV_CFG_T))
+#define GEN2G_V1_INP_CFG_ADDR (RS232I_CFG_INP_TYPE_E *)0x0800fc40  // Ends at 0x0800fc6f
+#define GEN2G_V1_SOL_CFG_ADDR (RS232I_SOL25_CFG_T *)0x0800fd00     // Ends at 0x0800fdbf
+#define GEN2G_V1_NEO_CFG_ADDR (GEN2G_NEO_CFG_T *)0x0800fe00  // Ends at 0x0800fe05
 #define GEN2G_FLASH_SECT_SZ   0x400
-#define GEN2G_NV_PARM_SIZE    0xfc
+#define GEN2G_NV_V0_CFG_SIZE  0xfc
+#define GEN2G_NV_V1_CFG_SIZE  GEN2G_FLASH_SECT_SZ - sizeof(GEN2G_PERSIST_T) - sizeof(U8)
 #define GEN2G_NUM_NVCFG       4
 #define GEN2G_APP_TBL_ADDR    0x00007f80
 
@@ -87,24 +95,26 @@ typedef enum
 #define GEN2G_SERVO_NUM_INP_WING_SERVO 8
 #define GEN2G_SERVO_NUM_SOL_WING_SERVO 4
 
+/* Non-volatile configuration versions.  nvVers was originally
+ * unused, so will be either 0x00 or 0xff depending on flash type.
+ * New versions the lsn is the version number and msn is the 1s complement
+ */
 typedef enum
 {
-   NVCFG_UNUSED               = 0x00,
-   NVCFG_SOL                  = 0x01,
-   NVCFG_INP                  = 0x02,
-   NVCFG_COLOR_TBL            = 0x03,
-} __attribute__((packed)) GEN2G_NVCFG_TYPE_E;
+   NVCFG_ORIG_VERS_00         = 0x00,
+   NVCFG_ORIG_VERS_FF         = 0xff,
+   NVCFG_VERS_1               = 0xe1,
+} __attribute__((packed)) GEN2G_NVCFG_VERS_E;
 
 /* Non-volatile configuration stored in flash on Gen2 boards.
- * Requires 256 bytes of flash.
+ * New version 1 uses 1024 - 16 bytes of flash.  (upper 16 bytes are GEN2G_PERSIST_T)
  */
 typedef struct
 {
-   U8                         nvCfgCrc;   /* CRC from wingCfg to end of cfgData */
-   U8                         res1[3];
-   RS232I_GEN2_WING_TYPE_E    wingCfg[RS232I_NUM_WING];
-   U8                         res2[8];
-   U8                         cfgData[0xf0];
+   U8                         nvCfgCrc;   // CRC from wingCfg to end of cfgData
+   GEN2G_NVCFG_VERS_E         nvVers;
+   U8                         res1[2];
+   RS232I_GEN2_WING_TYPE_E    wingCfg[RS232I_NUM_GEN25_WING];
 } GEN2G_NV_CFG_T;
 
 #ifndef GEN2G_INSTANTIATE
@@ -120,7 +130,7 @@ typedef struct
 {
    U32                        res1[2];
    U32                        serNum;
-   U32                        prodId;
+   U32                        res2;
 } GEN2G_PERSIST_T;
 
 #ifndef GEN2G_INSTANTIATE
@@ -148,12 +158,12 @@ typedef struct
 
 typedef struct
 {
-   RS232I_SOL_CFG_T           solCfg[RS232I_NUM_GEN2_SOL];
+   RS232I_SOL_CFG_T           solCfg[RS232I_NUM_GEN25_SOL];
 } GEN2G_SOL_DRV_CFG_T;
 
 typedef struct
 {
-   RS232I_CFG_INP_TYPE_E      inpCfg[RS232I_NUM_GEN2_INP];
+   RS232I_CFG_INP_TYPE_E      inpCfg[RS232I_NUM_GEN25_INP];
 } GEN2G_INP_CFG_T;
 
 typedef struct
@@ -161,36 +171,14 @@ typedef struct
    U8                         bytesPerPixel;
    U8                         numPixel;
    U8                         initColor[4];
-   U8                         unused[90];
 } GEN2G_NEO_CFG_T;
-
-#ifndef GEN2G_INSTANTIATE
-   extern
-#endif
-const U8                      CFG_SIZE[MAX_WING_TYPES]
-#ifdef GEN2G_INSTANTIATE
- ={   0,                            /* WING_UNUSED */
-      sizeof(GEN2G_SOL_DRV_CFG_T),  /* WING_SOL */
-      sizeof(GEN2G_INP_CFG_T),      /* WING_INP */
-      0,                            /* WING_INCAND */
-      0,                            /* WING_SW_MATRIX_OUT */
-      0,                            /* WING_SW_MATRIX_IN */
-      sizeof(GEN2G_NEO_CFG_T),      /* WING_NEO */
-      0,                            /* WING_HI_SIDE_INCAND */
-      sizeof(GEN2G_NEO_CFG_T),      /* WING_NEO_SOL */
-	  0,                            /* WING_SPI */
-	  0,                            /* WING_SW_MATRIX_OUT_LOW */
-	  0,                            /* WING_LAMP_MATRIX_COL */
-	  0,                            /* WING_LAMP_MATRIX_ROW */
-  }
-#endif
-;
 
 /* Init prototypes */
 void digital_init();
 void incand_init();
 void neo_init();
 void lampmtrx_init();
+void spi_init();
 
 #ifndef GEN2G_INSTANTIATE
    extern
@@ -206,7 +194,7 @@ void lampmtrx_init();
       neo_init,                     /* WING_NEO */
       incand_init,                  /* WING_HI_SIDE_INCAND */
       neo_init,                     /* WING_NEO_SOL */
-	  NULL,                         /* WING_SPI */
+	  spi_init,                     /* WING_SPI */
 	  NULL,                         /* WING_SW_MATRIX_OUT_LOW */
 	  lampmtrx_init,                /* WING_LAMP_MATRIX_COL */
 	  NULL,                         /* WING_LAMP_MATRIX_ROW */
@@ -229,20 +217,17 @@ typedef struct
    U8                         matrixInp[RS232I_MATRX_COL]; /* Note:  written in reverse column order to match Bally numbering. */
    U8                         matrixPrev[RS232I_MATRX_COL];
    U16                        solDrvProcCtl;
-   U16                        disSolInp;
-   U32                        inpMask;
+   U32                        inpMask[3];
+   U32                        solMask[3];
+   U32                        spiInp[2];
+   U32                        spiOut[2];
    U32                        typeWingBrds;  /* Bit mask of types of populated wing boards */
    U32                        validSwitch;
    U32                        crcErr;
-   U32                        prodId;
-   U32                        serNum;
    U32                        statusBlink;
    U16                        inpTimestamp[RS232I_NUM_GEN2_INP];
-   GEN2G_NV_CFG_T             nvCfgInfo;
-   GEN2G_SOL_DRV_CFG_T        *solDrvCfg_p;
-   GEN2G_INP_CFG_T            *inpCfg_p;
-   GEN2G_NEO_CFG_T            *neoCfg_p;
-   U8                         *freeCfg_p;
+   GEN2G_NEO_CFG_T            neoCfg;
+   GEN2G_PERSIST_T            persist;
 } GEN2G_INFO;
 
 #ifndef GEN2G_INSTANTIATE

@@ -77,6 +77,8 @@ void servo_move_proc(
    INT                  offset,
    U8                   newData);
 void servo_end_move_proc();
+RS232I_CFG_INP_TYPE_E digital_get_inp_cfg(
+   U32                        inpNum);
 
 /*
  * ===============================================================================
@@ -125,7 +127,7 @@ void servo_init()
             if (gen2g_info.servoMask & (1 << index))
             {
                /* Disable initial pulses if config value = 0xff */
-               counter = gen2g_info.inpCfg_p->inpCfg[index + GEN2G_SERVO_FIRST_INDX];
+               counter = digital_get_inp_cfg(index + GEN2G_SERVO_FIRST_INDX);
                if (counter == 0xff)
                {
             	   counter = 0;

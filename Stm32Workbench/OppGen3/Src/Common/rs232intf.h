@@ -52,11 +52,15 @@
 
 #include "stdtypes.h"   /* include peripheral declarations */
    
-#define RS232I_NUM_WING     4
+#define RS232I_NUM_PROC_WINGS 4
+#define RS232I_NUM_GEN25_WING 12
 #define RS232I_NUM_GEN2_SOL 16
+#define RS232I_NUM_PROC_PINS 32
+#define RS232I_NUM_GEN25_SOL  96
 #define RS232I_NUM_GEN2_INP 32
+#define RS232I_NUM_GEN25_INP  96
 #define RS232I_SZ_COLOR_TBL 32
-#define RS232I_SW_MATRX_INP 64
+#define RS232I_NUM_SW_MATRX_SPI_INP 64
 #define RS232I_MATRX_COL    8
 #define RS232I_TIMESTAMP_BYTES 64
 #define RS232I_CMD_HDR      2  /* CardAddr + Cmd */
@@ -161,6 +165,7 @@ typedef enum
 {
   DUTY_CYCLE_MASK           = 0x0f,   /* lsb 4 bits are duty cycle */
   MIN_OFF_MASK              = 0x70,
+  DUTY_CYCLE_MSb            = 0x80,
 } __attribute__((packed)) RS232I_DUTY_E;
 /* Min off time is 0-7 times the initial kick time.  If initial kick
  * is 20 ms and min off is 5, the solenoid will be forced off for 100 ms
@@ -172,6 +177,14 @@ typedef struct
    U8                         initKick;
    RS232I_DUTY_E              minOffDuty;
 }  RS232I_SOL_CFG_T;
+
+typedef struct
+{
+   RS232I_CFG_SOL_TYPE_E      cfg;
+   U8                         initKick;
+   RS232I_DUTY_E              minOffDuty;
+   U8                         delayMs;
+}  RS232I_SOL25_CFG_T;
 
 typedef enum
 {
@@ -200,8 +213,10 @@ typedef enum
   WING_SW_MATRIX_OUT_LOW    = 0x0a,
   WING_LAMP_MATRIX_COL      = 0x0b,
   WING_LAMP_MATRIX_ROW      = 0x0c,
-   
-  MAX_WING_TYPES
+  WING_MAX_SOL              = 0x0d,
+  MAX_WING_TYPES,
+
+  WING_UNUSED2              = 0xff
 } __attribute__((packed)) RS232I_GEN2_WING_TYPE_E;
 
 typedef enum

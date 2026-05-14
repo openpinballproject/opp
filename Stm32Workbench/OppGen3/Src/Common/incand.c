@@ -108,14 +108,14 @@ void incand_init()
    }
    
    /* Set up digital ports, walk through wing boards */
-   for (index = 0; index < RS232I_NUM_WING; index++)
+   for (index = 0; index < RS232I_NUM_PROC_WINGS; index++)
    {
       /* Check if this wing board is a incandescent wing board */
-      if ((gen2g_info.nvCfgInfo.wingCfg[index] == WING_INCAND) ||
-         (gen2g_info.nvCfgInfo.wingCfg[index] == WING_HI_SIDE_INCAND))
+      if ((gen2g_nv_cfg_p->wingCfg[index] == WING_INCAND) ||
+         (gen2g_nv_cfg_p->wingCfg[index] == WING_HI_SIDE_INCAND))
       {
          /* If high side incandescent wing, invert outputs */
-         if (gen2g_info.nvCfgInfo.wingCfg[index] == WING_HI_SIDE_INCAND)
+         if (gen2g_nv_cfg_p->wingCfg[index] == WING_HI_SIDE_INCAND)
          {
             incandInfo.invertMask |= (1 << index);
          }
@@ -245,7 +245,7 @@ void incand_task()
          }
 
          /* Write the new values */
-         for (index = 0; index < RS232I_NUM_WING; index++)
+         for (index = 0; index < RS232I_NUM_PROC_WINGS; index++)
          {
             if (incandInfo.validMask & (1 << index))
             {

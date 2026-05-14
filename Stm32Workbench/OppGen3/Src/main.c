@@ -98,12 +98,13 @@ void debug_save_nv_cfg();
 void timer_init();
 void timer_overflow_isr();
 
-void main_copy_flash_to_ram();
+void main_copy_flash_cfg_to_ram();
 void main_call_wing_inits();
 
-void digital_init();
 void digital_task(void);
 void digital_write_outputs();
+U8 *digital_convert_v0_cfg_to_v1_cfg();
+void digital_copy_v1_cfg();
 
 void rs232proc_init();
 void rs232proc_task();
@@ -115,6 +116,9 @@ void fade_start();
 void fade_task();
 
 void lampmtrx_task();
+
+void neo_copy_cfg(
+   U8                   *src_p);
 
 void servo_init();
 
@@ -170,7 +174,7 @@ int main(void)
 #endif
 
    fade_init();
-   main_copy_flash_to_ram();
+   main_copy_flash_cfg_to_ram();
    main_call_wing_inits();
    fade_start();
 
@@ -263,15 +267,16 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
 /*
  * ===============================================================================
  *
- * Name: main_copy_flash_to_ram
+ * Name: main_copy_flash_cfg_to_ram
  *
  * ===============================================================================
  */
 /**
- * Copy flash to RAM
+ * Copy flash configuration to RAM
  *
  * Check if the flash settings are valid.  If so, copy the information into RAM.
  *
@@ -284,50 +289,63 @@ static void MX_GPIO_Init(void)
  *
  * ===============================================================================
  */
-void main_copy_flash_to_ram()
+void main_copy_flash_cfg_to_ram()
 {
    U8                         crc;
-   U32                        *src_p;
-   U32                        *dst_p;
-   INT                        index;
-   U8                         *u8_p;
+   U32                        *u32_p;
+   BOOL                       validCfg = FALSE;
 
-   /* Init gen2g structure */
-   for (index = 0, u8_p = (U8 *)&gen2g_info; index < sizeof(gen2g_info); index++)
+   while (!validCfg)
    {
-      *u8_p++ = 0;
-   }
-
-   /* Initialize non-zero values */
-   gen2g_info.statusBlink = GEN2G_STAT_LED_ON;
-   gen2g_info.freeCfg_p = &gen2g_info.nvCfgInfo.cfgData[0];
-   gen2g_info.prodId = gen2g_persist_p->prodId;
-   gen2g_info.serNum = gen2g_persist_p->serNum;
-
-   while (!gen2g_info.validCfg)
-   {
-      /* Test if wing cfg have valid settings */
       crc = 0xff;
-      stdlser_calc_crc8(&crc, GEN2G_NV_PARM_SIZE, (U8 *)gen2g_nv_cfg_p->wingCfg);
-      if (crc == gen2g_nv_cfg_p->nvCfgCrc)
-      {
-         gen2g_info.validCfg = TRUE;
 
-         /* Copy the wing configuration */
-         for (src_p = (U32 *)gen2g_nv_cfg_p, dst_p = (U32 *)&gen2g_info.nvCfgInfo;
-            src_p < (U32 *)(GEN2G_CFG_TBL + sizeof(GEN2G_NV_CFG_T)); )
+      /* Check if original cfg version */
+	  if ((gen2g_nv_cfg_p->nvVers == NVCFG_ORIG_VERS_00) ||
+         (gen2g_nv_cfg_p->nvVers == NVCFG_ORIG_VERS_FF))
+      {
+         /* Test if cfg has valid crc8 */
+         stdlser_calc_crc8(&crc, GEN2G_NV_V0_CFG_SIZE, (U8 *)&gen2g_nv_cfg_p->wingCfg[0]);
+         if (crc == gen2g_nv_cfg_p->nvCfgCrc)
          {
-            *dst_p++ = *src_p++;
+            validCfg = TRUE;
+            U8 *cfg_p = digital_convert_v0_cfg_to_v1_cfg();
+            neo_copy_cfg(cfg_p);
+         }
+	  }
+	  else if (gen2g_nv_cfg_p->nvVers == NVCFG_VERS_1)
+      {
+         /* Yes, I'm using nvVers before it is CRC'd but it is as good as we can do */
+         stdlser_calc_crc8(&crc, GEN2G_NV_V1_CFG_SIZE, (U8 *)&gen2g_nv_cfg_p->nvVers);
+         if (crc == gen2g_nv_cfg_p->nvCfgCrc)
+         {
+            validCfg = TRUE;
+            digital_copy_v1_cfg();
+            neo_copy_cfg((U8 *)GEN2G_V1_NEO_CFG_ADDR);
          }
       }
-      else
+      if (!validCfg)
       {
          /* Config CRC8 failed, save a valid configuration */
          debug_save_nv_cfg();
-         gen2g_info.validCfg = FALSE;
       }
    }
-} /* End main_copy_flash_to_ram */
+
+   /* Init gen2g structure */
+   u32_p = (U32 *)&gen2g_info;
+   for (INT index = 0; index < sizeof(gen2g_info)/sizeof(U32); index++)
+   {
+      *u32_p++ = 0;
+   }
+
+   /* Initialize non-zero values */
+   gen2g_info.validCfg = TRUE;
+   gen2g_info.statusBlink = GEN2G_STAT_LED_ON;
+   gen2g_info.persist.res1[0] = 0xffffffff;
+   gen2g_info.persist.res1[1] = 0xffffffff;
+   gen2g_info.persist.res2 = 0xffffffff;
+   gen2g_info.persist.serNum = gen2g_persist_p->serNum;
+
+} /* End main_copy_flash_cfg_to_ram */
 
 /*
  * ===============================================================================
@@ -355,29 +373,29 @@ void main_call_wing_inits()
 {
    INT                        index;
 
-   if (gen2g_info.validCfg)
+   /* Walk through the wing boards and create bit mask of wing board types */
+   for (index = 0; index < RS232I_NUM_GEN25_WING; index++)
    {
-      /* Walk through the wing boards and create bit mask of wing board types */
-      for (index = 0; index < RS232I_NUM_WING; index++)
+      RS232I_GEN2_WING_TYPE_E wingType = gen2g_nv_cfg_p->wingCfg[index];
+      if ((wingType != WING_UNUSED) ||
+         (wingType != WING_UNUSED2))
       {
-         if (gen2g_info.nvCfgInfo.wingCfg[index] != WING_UNUSED)
-         {
-            gen2g_info.typeWingBrds |= (1 << gen2g_info.nvCfgInfo.wingCfg[index]);
-         }
+         gen2g_info.typeWingBrds |= (1 << wingType);
       }
-
-      /* Walk through types and call init functions using jump table */
-      digital_init();
-      for (index = WING_UNUSED + 1; index < MAX_WING_TYPES; index++)
-      {
-         if (((gen2g_info.typeWingBrds & (1 << index)) != 0) &&
-            (GEN2G_INIT_FP[index] != NULL))
-         {
-            GEN2G_INIT_FP[index]();
-         }
-      }
-      servo_init();
    }
+
+   /* Walk through types and call init functions using jump table */
+   digital_init();
+   for (index = WING_UNUSED + 1; index < MAX_WING_TYPES; index++)
+   {
+      if (((gen2g_info.typeWingBrds & (1 << index)) != 0) &&
+         (GEN2G_INIT_FP[index] != NULL))
+      {
+         GEN2G_INIT_FP[index]();
+      }
+   }
+   servo_init();
+
 } /* End main_call_wing_inits */
 /* USER CODE END 4 */
 

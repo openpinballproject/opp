@@ -166,19 +166,13 @@ void neo_init()
    U8                *currPxlVal_p;       /* Ptr to array of current pixel values */
    U8                *newPxlVal_p;        /* Ptr to array of future pixel values */
 
-#define MOSI_SOL_INP 0x0001
-#define SCK_SOL_INP  0x0004
-
-   gen2g_info.neoCfg_p = (GEN2G_NEO_CFG_T *)gen2g_info.freeCfg_p;
-   gen2g_info.freeCfg_p += sizeof(GEN2G_NEO_CFG_T);
-
-   if ((gen2g_info.neoCfg_p->bytesPerPixel == 0xff) || (gen2g_info.neoCfg_p->bytesPerPixel == 0x00))
+   if ((gen2g_info.neoCfg.bytesPerPixel == 0xff) || (gen2g_info.neoCfg.bytesPerPixel == 0x00))
    {
       bytesPerPixel = 3;
    }
    else
    {
-      bytesPerPixel = gen2g_info.neoCfg_p->bytesPerPixel;
+      bytesPerPixel = gen2g_info.neoCfg.bytesPerPixel;
    }
 
    /* Initialize the state machine to turn off all the LEDs, set indices to 0 */
@@ -187,15 +181,15 @@ void neo_init()
    neoInfo.tickOcc = FALSE;
    neoInfo.fadeDone = FALSE;
    neoInfo.neoPxls = TRUE;
-   numPixels = gen2g_info.neoCfg_p->numPixel;
-   if (gen2g_info.neoCfg_p->numPixel == 0)
+   numPixels = gen2g_info.neoCfg.numPixel;
+   if (gen2g_info.neoCfg.numPixel == 0)
    {
       numPixels = MAX_NEOPIXELS;
    }
 
    /* If byte after initial color bytes is 0xa5, assume SPI LEDs */
-   if ((gen2g_info.neoCfg_p->bytesPerPixel == 3) &&
-      (gen2g_info.neoCfg_p->initColor[3] == 0xa5))
+   if ((gen2g_info.neoCfg.bytesPerPixel == 3) &&
+      (gen2g_info.neoCfg.initColor[3] == 0xa5))
    {
  	  neoInfo.neoPxls = FALSE;
    }
@@ -269,7 +263,7 @@ void neo_init()
 
       for (index = 0; index < bytesPerPixel; index++)
       {
-         if (gen2g_info.neoCfg_p->initColor[index] != 0xff)
+         if (gen2g_info.neoCfg.initColor[index] != 0xff)
          {
             dfltOutput = FALSE;
          }
@@ -289,9 +283,9 @@ void neo_init()
             for (offset = 0; offset < bytesPerPixel; offset++)
             {
                *(currPxlVal_p + ((index * bytesPerPixel) + offset)) =
-                  gen2g_info.neoCfg_p->initColor[offset];
+                  gen2g_info.neoCfg.initColor[offset];
                *(newPxlVal_p + ((index * bytesPerPixel) + offset)) =
-                  gen2g_info.neoCfg_p->initColor[offset];
+                  gen2g_info.neoCfg.initColor[offset];
             }
          }
       }
@@ -304,9 +298,6 @@ void neo_init()
          gpioBBase_p->CRH &= ~0xf0000000;
          gpioBBase_p->CRH |= 0xb0000000;  // Alternate function push/pull output 50MHz
          gpioBBase_p->BSRR = 0x80000000;
-
-         gen2g_info.disSolInp = MOSI_SOL_INP;
-         gen2g_info.inpMask &= ~MOSI_SOL_INP;
       }
       else
       {
@@ -316,9 +307,6 @@ void neo_init()
          gpioBBase_p->CRH &= ~0xf0f00000;
          gpioBBase_p->CRH |= 0xb0b00000;  // Alternate function push/pull output 50MHz
          gpioBBase_p->BSRR = 0xa0000000;
-
-         gen2g_info.disSolInp = MOSI_SOL_INP | SCK_SOL_INP;
-         gen2g_info.inpMask &= ~(MOSI_SOL_INP | SCK_SOL_INP);
       }
 
       /* Enable clocks to SPI2 and DMA1 */
@@ -560,6 +548,37 @@ void neo_spi_fill_out_dma_data(
    for (INT index = 0; index < numBytes; index++, srcData_p++)
    {
       neo_spi_fade_proc(index, *srcData_p);
+   }
+}
+
+/*
+ * ===============================================================================
+ *
+ * Name: neo_copy_cfg
+ *
+ * ===============================================================================
+ */
+/**
+ * Copy neopixel configuration
+ *
+ * Copy neopixel configuration into RAM
+ *
+ * @param   srcData_p   [in]        Pointer to source of data
+ * @param   numBytes    [in]        Number of bytes to convert
+ * @return  None
+ *
+ * @pre     None
+ * @note    None
+ *
+ * ===============================================================================
+ */
+void neo_copy_cfg(
+   U8                   *src_p)
+{
+   U8 *dst_p = (U8 *)&gen2g_info.neoCfg;
+   for (INT index = 0; index < sizeof(GEN2G_NEO_CFG_T); index++)
+   {
+      *dst_p++ = *src_p++;
    }
 }
 

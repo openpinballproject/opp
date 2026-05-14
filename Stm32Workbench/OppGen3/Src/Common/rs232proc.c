@@ -99,9 +99,20 @@ void digital_set_kick_pwm(
    U8                         kickPwm,
    U8                         solIndex);
 void digital_upd_sol_cfg(
-   U16                        updMask);
+   U32                        numSol);
+void digital_upd_ind_sol_cfg(
+   U32                        solNum);
 void digital_upd_inp_cfg(
-   U32                        updMask);
+   U32                        numInp);
+void digital_upd_ind_inp_cfg(
+   U32                        inpNum);
+void digital_set_inp_cfg(
+   U32                        inpNum,
+   RS232I_CFG_INP_TYPE_E      inpCfg);
+void digital_convert_v0_sol_cfg_to_v1_solcfg(
+   INT                        solIndex,
+   RS232I_SOL_CFG_T           *cfg_p);
+
 void rs232proc_rx_buffer(
    U8                          *rcv_p,
    U32                         length);
@@ -257,7 +268,7 @@ void rs232proc_task(void)
                   case RS232I_GET_GEN2_CFG:
                   {
                      /* Product ID is uniquely identified by wing board cfg */
-                     rs232proc_copy_dest(&gen2g_info.nvCfgInfo.wingCfg[0], &txBuf[RS232I_CMD_HDR], RS232I_NUM_WING);
+                     rs232proc_copy_dest(&gen2g_nv_cfg_p->wingCfg[0], &txBuf[RS232I_CMD_HDR], RS232I_NUM_PROC_WINGS);
                      rs232_glob.state = RS232_STRIP_CMD;
                      txBuf[6] = 0xff;
                      stdlser_calc_crc8(&txBuf[6], 6, &txBuf[0]);
@@ -446,11 +457,11 @@ void rs232proc_task(void)
                   {
                      case RS232I_SET_SER_NUM:
                      {
-                        gen2g_info.serNum = (U32)rs232_glob.rxTmpBuf[3] |
+                        U32 serNum = (U32)rs232_glob.rxTmpBuf[3] |
                            ((U32)rs232_glob.rxTmpBuf[2] << 8) |
                            ((U32)rs232_glob.rxTmpBuf[1] << 16) |
                            ((U32)rs232_glob.rxTmpBuf[0] << 24);
-                        stdlflash_write((U16 *)&gen2g_info.serNum, (U16 *)(&gen2g_persist_p->serNum), sizeof(U32));
+                        stdlflash_write((U16 *)&serNum, (U16 *)(&gen2g_persist_p->serNum), sizeof(U32));
                         break;
                      }
                      case RS232I_RESET:
@@ -467,14 +478,15 @@ void rs232proc_task(void)
                      }
                      case RS232I_CONFIG_SOL:
                      {
-                        for (index = 0, src_p = &rs232_glob.rxTmpBuf[0],
-                           dest_p = (U8 *)gen2g_info.solDrvCfg_p;
-                           index < sizeof(GEN2G_SOL_DRV_CFG_T);
-                           index++)
+                        for (index = 0, src_p = &rs232_glob.rxTmpBuf[0];
+                           index < RS232I_NUM_GEN2_SOL; index++)
                         {
-                           *dest_p++ = *src_p++;
+                           digital_convert_v0_sol_cfg_to_v1_solcfg(
+                              index, (RS232I_SOL_CFG_T *)src_p);
+                           src_p += sizeof(RS232I_SOL_CFG_T);
                         }
-                        digital_upd_sol_cfg((1 << RS232I_NUM_GEN2_SOL) - 1);
+                        /* Only update the original 16 solenoids */
+                        digital_upd_sol_cfg(RS232I_NUM_GEN2_SOL);
                         break;
                      }
                      case RS232I_KICK_SOL:
@@ -488,72 +500,20 @@ void rs232proc_task(void)
                      }
                      case RS232I_CONFIG_INP:
                      {
-                        for (index = 0, src_p = &rs232_glob.rxTmpBuf[0],
-                           dest_p = (U8 *)gen2g_info.inpCfg_p;
-                           index < sizeof(GEN2G_INP_CFG_T);
-                           index++)
+                        for (index = 0, src_p = &rs232_glob.rxTmpBuf[0];
+                           index < RS232I_NUM_GEN2_INP;
+                           index++, src_p++)
                         {
-                           *dest_p++ = *src_p++;
+                           digital_set_inp_cfg(index, (RS232I_CFG_INP_TYPE_E)*src_p);
                         }
-                        digital_upd_inp_cfg(0xffffffff);
+                        digital_upd_inp_cfg(RS232I_NUM_GEN2_INP);
                         break;
                      }
                      case RS232I_SAVE_CFG:
-                     {
-                        /* Calculate the CRC */
-                        gen2g_info.nvCfgInfo.nvCfgCrc = 0xff;
-                        stdlser_calc_crc8(&gen2g_info.nvCfgInfo.nvCfgCrc, 0xfc,
-                           &gen2g_info.nvCfgInfo.wingCfg[0]);
-
-                        stdlflash_write((U16 *)&gen2g_info.nvCfgInfo,
-                           (U16 *)GEN2G_CFG_TBL, sizeof(GEN2G_NV_CFG_T));
-                        gen2g_info.validCfg = TRUE;
-                        break;
-                     }
                      case RS232I_ERASE_CFG:
-                     {
-                        gen2g_info.validCfg = FALSE;
-                        gen2g_info.freeCfg_p = &gen2g_info.nvCfgInfo.cfgData[0];
-                        gen2g_info.typeWingBrds = 0;
-                        gen2g_info.inpCfg_p = NULL;
-                        for (index = 0, dest_p = &gen2g_info.nvCfgInfo.cfgData[0];
-                           index < sizeof(gen2g_info.nvCfgInfo.cfgData);
-                           index++)
-                        {
-                           *dest_p++ = 0;
-                        }
-                        stdlflash_sector_erase((U16 *)GEN2G_CFG_TBL);
-                        if (gen2g_info.serNum != 0xffffffff)
-                        {
-                            stdlflash_write((U16 *)&gen2g_info.serNum, (U16 *)(&gen2g_persist_p->serNum), sizeof(U32));
-                        }
-                        if (gen2g_info.prodId != 0xffffffff)
-                        {
-                            stdlflash_write((U16 *)&gen2g_info.prodId, (U16 *)(&gen2g_persist_p->prodId), sizeof(U32));
-                        }
-                        break;
-                     }
                      case RS232I_SET_GEN2_CFG:
                      {
-                        for (index = 0; index < RS232I_NUM_WING; index++)
-                        {
-                           gen2g_info.nvCfgInfo.wingCfg[index] = rs232_glob.rxTmpBuf[index];
-                           if (gen2g_info.nvCfgInfo.wingCfg[index] != WING_UNUSED)
-                           {
-                              gen2g_info.typeWingBrds |= (1 << gen2g_info.nvCfgInfo.wingCfg[index]);
-                           }
-                        }
-                           
-                        /* Walk through types and call init functions using jump table, sets up config ptrs */
-                        digital_init();
-                        for (index = WING_UNUSED + 1; index < MAX_WING_TYPES; index++)
-                        {
-                           if (((gen2g_info.typeWingBrds & (1 << index)) != 0) &&
-                              (GEN2G_INIT_FP[index] != NULL))
-                           {
-                              GEN2G_INIT_FP[index]();
-                           }
-                        }
+                        /* Unused command, config sector is updated through bootloader */
                         break;
                      }
                      case RS232I_INCAND_CMD:
@@ -567,28 +527,24 @@ void rs232proc_task(void)
                      }
                      case RS232I_CONFIG_IND_SOL:
                      {
-                        if (rs232_glob.rxTmpBuf[CONFIG_NUM_OFFSET] < RS232I_NUM_GEN2_SOL)
+                        /* First byte contains solenoid number */
+                        if (rs232_glob.rxTmpBuf[CONFIG_NUM_OFFSET] < RS232I_NUM_GEN25_SOL)
                         {
-                           /* First byte contains solenoid number [0-15] */
-                           for (index = 0, src_p = &rs232_glob.rxTmpBuf[CONFIG_DATA_OFFSET],
-                              dest_p = ((U8 *)gen2g_info.solDrvCfg_p) +
-                                 (rs232_glob.rxTmpBuf[CONFIG_NUM_OFFSET] * sizeof(RS232I_SOL_CFG_T));
-                              index < sizeof(RS232I_SOL_CFG_T);
-                              index++)
-                           {
-                              *dest_p++ = *src_p++;
-                           }
-                           digital_upd_sol_cfg(1 << rs232_glob.rxTmpBuf[CONFIG_NUM_OFFSET]);
+                           src_p = &rs232_glob.rxTmpBuf[CONFIG_DATA_OFFSET];
+                           digital_convert_v0_sol_cfg_to_v1_solcfg(
+                              rs232_glob.rxTmpBuf[CONFIG_NUM_OFFSET],
+							  (RS232I_SOL_CFG_T *)src_p);
+                           digital_upd_ind_sol_cfg(rs232_glob.rxTmpBuf[CONFIG_NUM_OFFSET]);
                         }
                         break;
                      }
                      case RS232I_CONFIG_IND_INP:
                      {
-                        if (rs232_glob.rxTmpBuf[CONFIG_NUM_OFFSET] < RS232I_NUM_GEN2_INP)
+                        if (rs232_glob.rxTmpBuf[CONFIG_NUM_OFFSET] < RS232I_NUM_GEN25_INP)
                         {
-                           gen2g_info.inpCfg_p->inpCfg[rs232_glob.rxTmpBuf[CONFIG_NUM_OFFSET]] =
-                              rs232_glob.rxTmpBuf[CONFIG_DATA_OFFSET];
-                           digital_upd_inp_cfg(1 << rs232_glob.rxTmpBuf[CONFIG_NUM_OFFSET]);
+                           digital_set_inp_cfg(rs232_glob.rxTmpBuf[CONFIG_NUM_OFFSET],
+                              rs232_glob.rxTmpBuf[CONFIG_DATA_OFFSET]);
+                           digital_upd_ind_inp_cfg(rs232_glob.rxTmpBuf[CONFIG_NUM_OFFSET]);
                         }
                         break;
                      }
@@ -644,7 +600,10 @@ void rs232proc_task(void)
          case RS232_NEO_COLOR_TBL:
          {
             /* Command only passes bytesPerPixel, numPixels, and initial color */
-        	*((U8 *)gen2g_info.neoCfg_p + rs232_glob.currIndex) = data;
+            if (rs232_glob.currIndex < sizeof(GEN2G_NEO_CFG_T))
+            {
+               *((U8 *)&gen2g_info.neoCfg + rs232_glob.currIndex) = data;
+            }
             rs232_glob.currIndex++;
             if (rs232_glob.currIndex < rs232_glob.cmdLen)
             {

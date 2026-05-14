@@ -135,12 +135,12 @@ void fade_process_fade_bytes();
 void fade_init()
 {
    INT               index;
-   U8                *u8_p;
+   U32               *u32_p;
 
    /* Init fadeInfo structure */
-   for (index = 0, u8_p = (U8 *)&fadeInfo; index < sizeof(fadeInfo); index++)
+   for (index = 0, u32_p = (U32 *)&fadeInfo; index < sizeof(fadeInfo)/sizeof(U32); index++)
    {
-      *u8_p++ = 0;
+      *u32_p++ = 0;
    }
 }
 

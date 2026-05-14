@@ -54,53 +54,26 @@
 
 /* Minimal configuration:  Only contains input configuration.
  */
-const U8 cfg[0x20] = {
-   /* First config is for inputs, 0x20 in size, state inputs */
-   /* Entry 0        Entry 1           Entry 2           Entry 3 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* 0-7 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* 8-15 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* 16-23 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* 24-31 */
+#define NUM_DFLT_CFG_INP      32
+const RS232I_CFG_INP_TYPE_E dfltInpCfg[NUM_DFLT_CFG_INP] = {
+   /* All inputs set to state inputs */
+   STATE_INPUT, STATE_INPUT, STATE_INPUT, STATE_INPUT, /* 0 - 3 */
+   STATE_INPUT, STATE_INPUT, STATE_INPUT, STATE_INPUT, /* 4 - 7 */
+   STATE_INPUT, STATE_INPUT, STATE_INPUT, STATE_INPUT, /* 8 - 11 */
+   STATE_INPUT, STATE_INPUT, STATE_INPUT, STATE_INPUT, /* 12 - 15 */
+   STATE_INPUT, STATE_INPUT, STATE_INPUT, STATE_INPUT, /* 16 - 19 */
+   STATE_INPUT, STATE_INPUT, STATE_INPUT, STATE_INPUT, /* 20 - 23 */
+   STATE_INPUT, STATE_INPUT, STATE_INPUT, STATE_INPUT, /* 24 - 27 */
+   STATE_INPUT, STATE_INPUT, STATE_INPUT, STATE_INPUT, /* 28 - 31 */
 };
 
-#if 0
-/* Full configuration:  This is not used, but is here to show the
- *   locations of a maximum configuration using inputs, solenoids,
- *   and neopixel color table.
- */
-const U8 cfg[0xf0] = {
-   /* First config is for inputs, 0x20 in size, state inputs */
-   /* Entry 0        Entry 1           Entry 2           Entry 3 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* 0-7 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* 8-15 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* 16-23 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* 24-31 */
-
-   /* Second config is for solenoids, 0x30 in size, 2 flippers and 2 kickers */
-   /* Entry 0        Entry 1           Entry 2           Entry 3 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  /* 0-3 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  /* 4-7 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  /* 8-11 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  /* 12-15 */
-   
-   /* Third config is color table, 0x60 in size */
-   /* Entry 0        Entry 1           Entry 2           Entry 3 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  /* 0-3 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  /* 4-7 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  /* 8-11 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  /* 12-15 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  /* 16-19 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  /* 20-23 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  /* 24-27 */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  /* 28-31 */
-
-   /* Unused config */
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+#define CRC 0xf6
+const GEN2G_NV_CFG_T dfltNvCfg = {
+   CRC, NVCFG_VERS_1, { 0xff, 0xff },
+   { WING_INP, WING_INP, WING_INP, WING_INP,
+   WING_UNUSED2, WING_UNUSED2, WING_UNUSED2, WING_UNUSED2,
+   WING_UNUSED2, WING_UNUSED2, WING_UNUSED2, WING_UNUSED2 }
 };
-#endif
    
 /*
  * ===============================================================================
@@ -125,32 +98,27 @@ const U8 cfg[0xf0] = {
  */
 void debug_save_nv_cfg()
 {
-   U8                         *src_p;
-   U8                         *dst_p;
-   
-   gen2g_info.nvCfgInfo.nvCfgCrc = 0xff;
-   gen2g_info.nvCfgInfo.wingCfg[0] = WING_INP;
-   gen2g_info.nvCfgInfo.wingCfg[1] = WING_INP;
-   gen2g_info.nvCfgInfo.wingCfg[2] = WING_INP;
-   gen2g_info.nvCfgInfo.wingCfg[3] = WING_INP;
-   appStart.codeVers = VERSG_CODE_VERS;
-   
-   for (src_p = (U8 *)&cfg[0], dst_p = (U8 *)&gen2g_info.nvCfgInfo.cfgData;
-      src_p < (U8 *)&cfg[0] + sizeof(cfg); )
-   {
-      *dst_p++ = *src_p++;
-   }
-   
-   stdlser_calc_crc8(&gen2g_info.nvCfgInfo.nvCfgCrc, 0xfc,
-      &gen2g_info.nvCfgInfo.wingCfg[0]);
+   /* Save persistent data */
+   gen2g_info.persist.res1[0] = 0xffffffff;
+   gen2g_info.persist.res1[1] = 0xffffffff;
+   gen2g_info.persist.res2 = 0xffffffff;
+   gen2g_info.persist.serNum = gen2g_persist_p->serNum;
 
    /* Erase sector */
    stdlflash_sector_erase((U16 *)GEN2G_CFG_TBL);
    
-   /* Write sector */
-   stdlflash_write((U16 *)&gen2g_info.nvCfgInfo,
-      (U16 *)GEN2G_CFG_TBL, sizeof(GEN2G_NV_CFG_T));
-   
+   /* Write persistent data back to flash */
+   stdlflash_write((U16 *)&gen2g_info.persist,
+      (U16 *)GEN2G_PERSIST_TBL, sizeof(GEN2G_PERSIST_T));
+
+   /* Write 32 inputs to state inputs */
+   stdlflash_write((U16 *)&dfltInpCfg[0],
+      (U16 *)GEN2G_V1_INP_CFG_ADDR, sizeof(dfltInpCfg));
+
+   /* Write wing cfg, version, and precomputed CRC */
+   stdlflash_write((U16 *)&dfltNvCfg,
+      (U16 *)GEN2G_CFG_TBL, sizeof(dfltNvCfg));
+
 } /* End debug_save_nv_cfg */
 
 /* [] END OF FILE */

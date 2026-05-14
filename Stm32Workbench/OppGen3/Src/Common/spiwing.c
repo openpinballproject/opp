@@ -95,9 +95,6 @@ SPI_INFO spiInfo;
  */
 void spi_init()
 {
-   gen2g_info.neoCfg_p = (GEN2G_NEO_CFG_T *)gen2g_info.freeCfg_p;
-   gen2g_info.freeCfg_p += sizeof(GEN2G_NEO_CFG_T);
-
    /* Default to 48MHz/4 = 12MHz */
    spiInfo.clkDivisor = 4;
 
@@ -107,50 +104,33 @@ void spi_init()
    spiInfo.numBytes = 8;
    gen2g_info.haveSpi = TRUE;
     
-   /* Test for null on commands */
-   spiInfo.txBuf_p = malloc(SPI_DATA_BUF_SZ);
-   if (spiInfo.txBuf_p == NULL)
-   {
-      gen2g_info.error = ERR_MALLOC_FAIL;
-   }
+   spiInfo.txBuf_p = (U8 *)&gen2g_info.spiOut[0];
+   spiInfo.rxBuf_p = (U8 *)&gen2g_info.spiInp[0];
 
-   /* Test for null on commands */
-   if (gen2g_info.error == NO_ERRORS)
-   {
-      spiInfo.rxBuf_p = malloc(SPI_DATA_BUF_SZ);
-      if (spiInfo.rxBuf_p == NULL)
-      {
-         gen2g_info.error = ERR_MALLOC_FAIL;
-      }
-   }
+   /* Setup SPI2 GPIO port pins */
+   gpioBBase_p->CRH &= ~0xf0000000;
+   gpioBBase_p->CRH |= 0xb0000000;  // Alternate function push/pull output 50MHz
+   gpioBBase_p->BSRR = 0x80000000;
 
-   if (gen2g_info.error == NO_ERRORS)
-   {
-      /* Setup SPI2 GPIO port pins */
-      gpioBBase_p->CRH &= ~0xf0000000;
-      gpioBBase_p->CRH |= 0xb0000000;  // Alternate function push/pull output 50MHz
-      gpioBBase_p->BSRR = 0x80000000;
+   /* Enable clocks to SPI2 and DMA1 */
+   rccBase_p->AHBENR |= 0x00000001;  // DMA1
+   rccBase_p->APB1ENR |= 0x00004000;  // SPI2
 
-      /* Enable clocks to SPI2 and DMA1 */
-      rccBase_p->AHBENR |= 0x00000001;  // DMA1
-      rccBase_p->APB1ENR |= 0x00004000;  // SPI2
+   /* Set up SPI2 */
+   spi2Base_p->CR1 = SPIx_CR1_SPE | SPIx_CR1_BR_8 | SPIx_CR1_MSTR | SPIx_CR1_SSM | SPIx_CR1_SSI;
+   spi2Base_p->CR2 = SPIx_CR2_TXDMAEN;
 
-      /* Set up SPI2 */
-      spi2Base_p->CR1 = SPIx_CR1_SPE | SPIx_CR1_BR_8 | SPIx_CR1_MSTR | SPIx_CR1_SSM | SPIx_CR1_SSI;
-      spi2Base_p->CR2 = SPIx_CR2_TXDMAEN;
+   /* SPI tx DMA is dma1-5 */
+   dma1Base_p->CPAR5 = (R32)&spi2Base_p->DR;
+   dma1Base_p->CMAR5 = (R32)spiInfo.txBuf_p;
+   dma1Base_p->CNDTR5 = spiInfo.numBytes;
+   dma1Base_p->CCR5 = DMAx_CCR_MINC | DMAx_CCR_DIR | DMAx_CCR_EN;
 
-      /* SPI tx DMA is dma1-5 */
-      dma1Base_p->CPAR5 = (R32)&spi2Base_p->DR;
-      dma1Base_p->CMAR5 = (R32)spiInfo.txBuf_p;
-      dma1Base_p->CNDTR5 = spiInfo.numBytes;
-      dma1Base_p->CCR5 = DMAx_CCR_MINC | DMAx_CCR_DIR | DMAx_CCR_EN;
-
-      /* SPI rx DMA is dma1-4 */
-      dma1Base_p->CPAR4 = (R32)&spi2Base_p->DR;
-      dma1Base_p->CMAR4 = (R32)spiInfo.rxBuf_p;
-      dma1Base_p->CNDTR4 = spiInfo.numBytes;
-      dma1Base_p->CCR4 = DMAx_CCR_MINC | DMAx_CCR_DIR | DMAx_CCR_EN;
-   }
+   /* SPI rx DMA is dma1-4 */
+   dma1Base_p->CPAR4 = (R32)&spi2Base_p->DR;
+   dma1Base_p->CMAR4 = (R32)spiInfo.rxBuf_p;
+   dma1Base_p->CNDTR4 = spiInfo.numBytes;
+   dma1Base_p->CCR4 = DMAx_CCR_MINC | DMAx_CCR_DIR | DMAx_CCR_EN;
 }
 
 /*

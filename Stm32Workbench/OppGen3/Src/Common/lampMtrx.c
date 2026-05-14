@@ -105,8 +105,8 @@ void lampmtrx_init()
    U8                         *currPxlVal_p;       /* Ptr to array of current pixel values */
    U8                         *newPxlVal_p;        /* Ptr to array of future pixel values */
    
-   if ((gen2g_info.nvCfgInfo.wingCfg[COL_WING_POS] == WING_LAMP_MATRIX_COL) &&
-      (gen2g_info.nvCfgInfo.wingCfg[ROW_WING_POS] == WING_LAMP_MATRIX_ROW))
+   if ((gen2g_nv_cfg_p->wingCfg[COL_WING_POS] == WING_LAMP_MATRIX_COL) &&
+      (gen2g_nv_cfg_p->wingCfg[ROW_WING_POS] == WING_LAMP_MATRIX_ROW))
    {
       gen2g_info.haveLampMtrx = TRUE;
       lampInfo.blinkSlow = TRUE;
